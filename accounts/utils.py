@@ -24,12 +24,32 @@ def generate_member_number():
     return f"MBR{year}{random_number}"
 
 
+def send_registration_confirmation_email(user):
+    subject = "Registration Confirmation"
+    email_body = render_to_string("registration_confirmation.html", {"user": user})
+    send_mail(
+        subject=subject,
+        message="",
+        from_email=EMAIL_USER,
+        recipient_list=[user.email],
+        fail_silently=False,
+        html_message=email_body,
+    )
+
+
 def send_member_number_email(user):
     subject = "Your Membership Number"
-    message = render_to_string(
-        "email/member_number.html", {"user": user, "member_no": user.member_no}
+    email_body = render_to_string(
+        "member_number.html", {"user": user, "member_no": user.member_no}
     )
-    send_mail(subject, message, EMAIL_USER, [user.email])
+    send_mail(
+        subject=subject,
+        message="",
+        from_email=EMAIL_USER,
+        recipient_list=[user.email],
+        fail_silently=False,
+        html_message=email_body,
+    )
 
 
 def send_account_creation_email(user):

@@ -4,6 +4,8 @@ from django.contrib.auth.models import (
     PermissionsMixin,
 )
 from django.db import models
+from cloudinary.models import CloudinaryField
+
 from accounts.abstracts import (
     UniversalIdModel,
     MemberNumberModel,
@@ -62,6 +64,8 @@ class User(
     last_name = models.CharField(max_length=255)
     email = models.EmailField()
     dob = models.DateField()
+    gender = models.CharField(max_length=255)
+    avatar = CloudinaryField("avatars", blank=True, null=True)
 
     # Identity
     id_type = models.CharField(max_length=255)
