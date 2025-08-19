@@ -19,7 +19,7 @@ from accounts.serializers import (
     UserLoginSerializer,
 )
 from accounts.permissions import IsSystemAdmin
-from accounts.utils import send_password_reset_email
+from accounts.utils import send_password_reset_email, send_member_number_email
 
 
 User = get_user_model()
@@ -96,10 +96,10 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = (IsAuthenticated,)
     serializer_class = BaseUserSerializer
     queryset = User.objects.all()
-    lookup_field = "member_no"
+    lookup_field = "id"
 
     def get_queryset(self):
-        return super().get_queryset().filter(member_no=self.request.user.member_no)
+        return super().get_queryset().filter(id=self.request.user.id)
 
 
 """
@@ -108,11 +108,49 @@ System admin views
 """
 
 
+class MemberListView(generics.ListAPIView):
+    permission_classes = (IsSystemAdmin,)
+    serializer_class = BaseUserSerializer
+    queryset = User.objects.all()
+
+
 class ApproveMemberView(generics.RetrieveUpdateAPIView):
     permission_classes = (IsSystemAdmin,)
-    serializer_class = MemberSerializer
+    serializer_class = BaseUserSerializer
     queryset = User.objects.all()
-    lookup_field = "member_no"
+    lookup_field = "reference"
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        # Validate that user is not already approved
+        if instance.is_approved:
+            return Response(
+                {"detail": "User is already approved."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Approve user and assign member number
+        instance.is_approved = True
+        instance.is_active = True
+        instance.save()
+
+        # Send member number email
+        try:
+            send_member_number_email(user=instance)
+        except Exception as e:
+            # Log the error (use your preferred logging mechanism)
+            print(f"Failed to send email to {instance.email}: {str(e)}")
+            return Response(
+                {"detail": "User approved, but failed to send email."},
+                status=status.HTTP_200_OK,
+            )
+
+        serializer = self.get_serializer(instance)
+        return Response(
+            {"detail": "User approved successfully.", "data": serializer.data},
+            status=status.HTTP_200_OK,
+        )
 
 
 """
