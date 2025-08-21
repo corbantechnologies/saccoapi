@@ -101,7 +101,20 @@ class User(
     is_active = models.BooleanField(default=True)
 
     USERNAME_FIELD = "member_no"
-    REQUIRED_FIELDS = ["email", "password"]
+    REQUIRED_FIELDS = [
+        "email",
+        "password",
+        "salutation",
+        "first_name",
+        "last_name",
+        "dob",
+        "gender",
+        "id_type",
+        "id_no",
+        "tax_pin",
+        "phone",
+        "employment_type",
+    ]
 
     objects = UserManager()
 
