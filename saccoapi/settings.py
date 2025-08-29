@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     # Local apps
     "accounts",
     "verification",
+    "finances",
 ]
 
 MIDDLEWARE = [
