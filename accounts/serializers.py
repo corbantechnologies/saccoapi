@@ -45,7 +45,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "gender",
             "avatar",
             "id_type",
-            "id_no",
+            "id_number",
             "tax_pin",
             "phone",
             "county",
@@ -76,7 +76,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
 
 class MemberSerializer(BaseUserSerializer):
     def create(self, validated_data):
-        user = self.create_user(validated_data, "is_member", "is_active")
+        user = self.create_user(validated_data, "is_member")
         user.save()
 
         return user
@@ -84,7 +84,7 @@ class MemberSerializer(BaseUserSerializer):
 
 class SystemAdminSerializer(BaseUserSerializer):
     def create(self, validated_data):
-        user = self.create_user(validated_data, "is_system_admin", "is_active")
+        user = self.create_user(validated_data, "is_system_admin")
         user.save()
 
         return user
