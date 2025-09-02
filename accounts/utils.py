@@ -61,11 +61,17 @@ def send_member_number_email(user):
     email_body = ""
     current_year = datetime.now().year
     site_url = f"{DOMAIN}/login"
+    password_reset_url = f"{DOMAIN}/reset-password"
 
     try:
         email_body = render_to_string(
             "member_number.html",
-            {"user": user, "current_year": current_year, "site_url": site_url},
+            {
+                "user": user,
+                "current_year": current_year,
+                "site_url": site_url,
+                "password_reset_url": password_reset_url,
+            },
         )
         params = {
             "from": "Wekeza SACCO <onboarding@corbantechnologies.org>",
