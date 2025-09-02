@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     # Local apps
     "accounts",
     "verification",
+    "finances",
 ]
 
 MIDDLEWARE = [
@@ -204,3 +205,6 @@ MPESA_SHORTCODE = config("MPESA_SHORTCODE")
 MPESA_PASSKEY = config("MPESA_PASSKEY")
 MPESA_CALLBACK_URL = config("MPESA_CALLBACK_URL")
 MPESA_API_URL = config("MPESA_API_URL")
+
+# Resend
+RESEND_API_KEY = config("RESEND_API_KEY")

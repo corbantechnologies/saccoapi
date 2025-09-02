@@ -78,7 +78,7 @@ class User(
 
     # Identity
     id_type = models.CharField(max_length=255)
-    id_no = models.CharField(max_length=255)
+    id_number = models.CharField(max_length=255)
     tax_pin = models.CharField(max_length=255)
 
     # Contact & Address Details
@@ -110,7 +110,7 @@ class User(
         "dob",
         "gender",
         "id_type",
-        "id_no",
+        "id_number",
         "tax_pin",
         "phone",
         "employment_type",
@@ -119,4 +119,4 @@ class User(
     objects = UserManager()
 
     def __str__(self):
-        return self.member_no
+        return f"{self.member_no} - {self.first_name} {self.last_name}"
