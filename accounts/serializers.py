@@ -38,6 +38,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "id",
             "email",
             "password",
+            "member_no",
             "salutation",
             "first_name",
             "last_name",
