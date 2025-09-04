@@ -105,20 +105,49 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
 """
 System admin views
 - Approve new members
+- View list of members
 """
 
 
 class MemberListView(generics.ListAPIView):
+    """
+    Fetch the list of members
+    """
+
     permission_classes = (IsSystemAdmin,)
     serializer_class = BaseUserSerializer
     queryset = User.objects.all()
+
+    def get_queryset(self):
+        """
+        Fetch is_member and is_system_admin field
+        Users with is_system_admin are also members
+        """
+        return super().get_queryset().filter(
+            is_member=True
+        ) | super().get_queryset().filter(is_system_admin=True)
+
+
+class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    View, update and delete a member
+    """
+
+    permission_classes = (IsSystemAdmin,)
+    serializer_class = BaseUserSerializer
+    queryset = User.objects.all()
+    lookup_field = "member_no"
 
 
 class ApproveMemberView(generics.RetrieveUpdateAPIView):
+    """
+    Approve a new member
+    """
+
     permission_classes = (IsSystemAdmin,)
     serializer_class = BaseUserSerializer
     queryset = User.objects.all()
-    lookup_field = "reference"
+    lookup_field = "member_no"
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()

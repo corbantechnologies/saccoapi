@@ -41,17 +41,11 @@ class UserManager(BaseUserManager):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_approved", True)
-        extra_fields.setdefault("is_member", True)
-        extra_fields.setdefault("is_system_admin", True)
 
         if extra_fields.get("is_staff") is not True:
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True.")
-        if extra_fields.get("is_member") is not True:
-            raise ValueError("Superuser must have is_member=True.")
-        if extra_fields.get("is_system_admin") is not True:
-            raise ValueError("Superuser must have is_system_admin=True.")
         if extra_fields.get("is_approved") is not True:
             raise ValueError("Superuser must have is_approved=True.")
 
