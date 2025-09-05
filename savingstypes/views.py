@@ -13,7 +13,7 @@ class SavingsTypeListCreateView(generics.ListCreateAPIView):
     ]
 
 
-class SavingsTypeDetailView(generics.RetrieveUpdateDestroyAPIView):
+class SavingsTypeDetailView(generics.RetrieveUpdateAPIView):
     queryset = SavingsType.objects.all()
     serializer_class = SavingsTypeSerializer
     permission_classes = [

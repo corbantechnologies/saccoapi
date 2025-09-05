@@ -1,20 +1,20 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
-from savingstypes.models import SavingsType
+from loantypes.models import LoanType
 
 
-class SavingsTypeSerializer(serializers.ModelSerializer):
+class LoanTypeSerializer(serializers.ModelSerializer):
     name = serializers.CharField(
         required=True,
-        validators=[UniqueValidator(queryset=SavingsType.objects.all())],
+        validators=[UniqueValidator(queryset=LoanType.objects.all())],
     )
     description = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
 
     class Meta:
-        model = SavingsType
+        model = LoanType
         fields = (
             "name",
             "description",

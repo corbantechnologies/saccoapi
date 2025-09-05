@@ -1,3 +1,10 @@
 from django.contrib import admin
 
-# Register your models here.
+from loantypes.models import LoanType
+
+
+class LoanTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "description")
+
+
+admin.site.register(LoanType, LoanTypeAdmin)
