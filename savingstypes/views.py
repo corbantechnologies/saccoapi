@@ -1,3 +1,22 @@
-from django.shortcuts import render
+from rest_framework import generics
 
-# Create your views here.
+from savingstypes.models import SavingsType
+from savingstypes.serializers import SavingsTypeSerializer
+from accounts.permissions import IsSystemAdminOrReadOnly
+
+
+class SavingsTypeListCreateView(generics.ListCreateAPIView):
+    queryset = SavingsType.objects.all()
+    serializer_class = SavingsTypeSerializer
+    permission_classes = [
+        IsSystemAdminOrReadOnly,
+    ]
+
+
+class SavingsTypeDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = SavingsType.objects.all()
+    serializer_class = SavingsTypeSerializer
+    permission_classes = [
+        IsSystemAdminOrReadOnly,
+    ]
+    lookup_field = "reference"
