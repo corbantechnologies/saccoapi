@@ -18,12 +18,19 @@ class UniversalIdModel(models.Model):
 
 
 class MemberNumberModel(models.Model):
+    # Unique member number: some use their payroll number
     member_no = models.CharField(
-        max_length=15, unique=True, default=generate_member_number, editable=False
+        max_length=20,
+        unique=True,
     )
 
     class Meta:
         abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self.member_no:
+            self.member_no = generate_member_number()
+        super().save(*args, **kwargs)
 
 
 class TimeStampedModel(models.Model):

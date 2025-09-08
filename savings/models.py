@@ -13,7 +13,7 @@ class SavingsAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         User, on_delete=models.CASCADE, related_name="savings_accounts"
     )
     account_type = models.ForeignKey(
-        SavingsType, on_delete=models.PROTECT, related_name="savings_accounts"
+        SavingsType, on_delete=models.PROTECT, related_name="saving_accounts"
     )
     account_number = models.CharField(
         max_length=20, unique=True, default=generate_account_number
