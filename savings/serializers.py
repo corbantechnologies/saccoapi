@@ -18,6 +18,8 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
             "account_number",
             "balance",
             "is_active",
+            "identity",
+            "reference",
             "created_at",
             "updated_at",
         ]
