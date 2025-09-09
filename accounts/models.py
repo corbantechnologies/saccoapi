@@ -64,6 +64,7 @@ class User(
     # Personal Details
     salutation = models.CharField(max_length=25)
     first_name = models.CharField(max_length=255)
+    middle_name = models.CharField(max_length=255, blank=True, null=True)
     last_name = models.CharField(max_length=255)
     email = models.EmailField()
     dob = models.DateField()

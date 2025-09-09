@@ -53,6 +53,9 @@ INSTALLED_APPS = [
     "accounts",
     "verification",
     "finances",
+    "savingstypes",
+    "loantypes",
+    "savings",
 ]
 
 MIDDLEWARE = [
