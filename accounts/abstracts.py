@@ -22,6 +22,8 @@ class MemberNumberModel(models.Model):
     member_no = models.CharField(
         max_length=20,
         unique=True,
+        blank=True,
+        null=True,
     )
 
     class Meta:
