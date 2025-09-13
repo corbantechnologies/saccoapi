@@ -18,6 +18,7 @@ class SavingsTypeSerializer(serializers.ModelSerializer):
         fields = (
             "name",
             "description",
+            "interest_rate",
             "created_at",
             "updated_at",
             "reference",

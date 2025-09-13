@@ -56,6 +56,7 @@ class TokenView(APIView):
                         "is_system_admin": user.is_system_admin,
                         "is_active": user.is_active,
                         "is_staff": user.is_staff,
+                        "is_superuser": user.is_superuser,
                         "is_approved": user.is_approved,
                         "last_login": user.last_login,
                         "token": token.key,
