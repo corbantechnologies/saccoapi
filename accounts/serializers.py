@@ -77,8 +77,6 @@ class BaseUserSerializer(serializers.ModelSerializer):
         user.is_active = True
         user.save()
 
-        send_registration_confirmation_email(user)
-
         return user
 
 
@@ -86,6 +84,7 @@ class MemberSerializer(BaseUserSerializer):
     def create(self, validated_data):
         user = self.create_user(validated_data, "is_member")
         user.save()
+        send_registration_confirmation_email(user)
 
         return user
 
@@ -94,6 +93,7 @@ class SystemAdminSerializer(BaseUserSerializer):
     def create(self, validated_data):
         user = self.create_user(validated_data, "is_system_admin")
         user.save()
+        send_registration_confirmation_email(user)
 
         return user
 
