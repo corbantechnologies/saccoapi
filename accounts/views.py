@@ -19,7 +19,11 @@ from accounts.serializers import (
     MemberCreatedByAdminSerializer,
 )
 from accounts.permissions import IsSystemAdmin
-from accounts.utils import send_password_reset_email, send_member_number_email
+from accounts.utils import (
+    send_password_reset_email,
+    send_member_number_email,
+    send_account_activated_email,
+)
 
 
 User = get_user_model()
@@ -267,6 +271,13 @@ class ActivateAccountView(APIView):
                 user.set_password(password)
                 user.is_active = True
                 user.save()
+
+                # Send member number email
+                try:
+                    send_member_number_email(user=user)
+                except Exception as e:
+                    # Log the error (use your preferred logging mechanism)
+                    print(f"Failed to send email to {user.email}: {str(e)}")
                 return Response(
                     {"message": "Account activated successfully"},
                     status=status.HTTP_200_OK,

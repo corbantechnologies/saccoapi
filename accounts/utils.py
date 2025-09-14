@@ -88,7 +88,7 @@ def send_member_number_email(user):
         return None
 
 
-def send_account_creation_email(user):
+def send_account_activated_email(user):
     """
     A function to send a successful account creation email
     """
@@ -98,7 +98,7 @@ def send_account_creation_email(user):
     try:
 
         email_body = render_to_string(
-            "account_created.html", {"user": user, "current_year": current_year}
+            "account_activated.html", {"user": user, "current_year": current_year}
         )
         params = {
             "from": "Wananchi Mali <onboarding@wananchimali.com>",

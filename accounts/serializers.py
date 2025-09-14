@@ -202,7 +202,7 @@ class MemberCreatedByAdminSerializer(BaseUserSerializer):
         token_generator = PasswordResetTokenGenerator()
         token = token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        activation_link = f"{DOMAIN}/activate?uidb64={uid}&token={token}"
+        activation_link = f"{DOMAIN}/activate/{uid}/{token}"
 
         send_account_created_by_admin_email(user, activation_link)
 
