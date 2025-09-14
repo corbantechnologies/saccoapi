@@ -67,7 +67,7 @@ class User(
     middle_name = models.CharField(max_length=255, blank=True, null=True)
     last_name = models.CharField(max_length=255)
     email = models.EmailField()
-    dob = models.DateField()
+    dob = models.DateField(blank=True, null=True)
     gender = models.CharField(max_length=255)
     avatar = CloudinaryField("avatars", blank=True, null=True)
 
@@ -102,7 +102,6 @@ class User(
         "salutation",
         "first_name",
         "last_name",
-        "dob",
         "gender",
         "id_type",
         "id_number",
@@ -112,6 +111,11 @@ class User(
     ]
 
     objects = UserManager()
+
+    class Meta:
+        verbose_name = "User"
+        verbose_name_plural = "Users"
+        ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.member_no} - {self.first_name} {self.last_name}"

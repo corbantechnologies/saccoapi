@@ -25,7 +25,7 @@ urlpatterns = [
     # System admin activities
     path("", MemberListView.as_view(), name="members"),
     path("member/<str:member_no>/", MemberDetailView.as_view(), name="member-detail"),
-    path("new-member/", MemberCreatedByAdminView.as_view(), name="new-member"),
+    path("new-member/create/", MemberCreatedByAdminView.as_view(), name="new-member"),
     path(
         "approve-member/<str:member_no>/",
         ApproveMemberView.as_view(),

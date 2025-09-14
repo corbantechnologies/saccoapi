@@ -191,9 +191,10 @@ SACCO Admins Serializers
 
 
 class MemberCreatedByAdminSerializer(BaseUserSerializer):
+    password = serializers.CharField(required=False, write_only=True)
 
     def create(self, validated_data):
-        validated_data["password"] = None
+        # validated_data["password"] = None
         user = self.create_user(validated_data, "is_member")
         user.is_approved = True
         user.save()
