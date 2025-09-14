@@ -5,10 +5,9 @@ from rest_framework.response import Response
 from django.contrib.auth import get_user_model, authenticate
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.authtoken.models import Token
-
-from django.conf import settings
-from django.shortcuts import redirect
-from urllib.parse import urlencode
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 
 from accounts.serializers import (
     BaseUserSerializer,
@@ -17,9 +16,14 @@ from accounts.serializers import (
     RequestPasswordResetSerializer,
     PasswordResetSerializer,
     UserLoginSerializer,
+    MemberCreatedByAdminSerializer,
 )
 from accounts.permissions import IsSystemAdmin
-from accounts.utils import send_password_reset_email, send_member_number_email
+from accounts.utils import (
+    send_password_reset_email,
+    send_member_number_email,
+    send_account_activated_email,
+)
 
 
 User = get_user_model()
@@ -218,3 +222,67 @@ class PasswordResetView(APIView):
                 status=status.HTTP_200_OK,
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+"""
+SACCO Admins:
+- Creating a new member
+- Approving a new member
+- Member activating their accounts
+"""
+
+
+class MemberCreatedByAdminView(generics.CreateAPIView):
+    permission_classes = (IsSystemAdmin,)
+    serializer_class = MemberCreatedByAdminSerializer
+    queryset = User.objects.all()
+
+
+class ActivateAccountView(APIView):
+    permission_classes = [
+        AllowAny,
+    ]
+
+    def patch(self, request):
+        uidb64 = request.data.get("uidb64")
+        token = request.data.get("token")
+        password = request.data.get("password")
+
+        if not all([uidb64, token, password]):
+            return Response(
+                {"error": "Missing required fields"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response(
+                {"error": "Invalid activation link"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        token_generator = PasswordResetTokenGenerator()
+        if token_generator.check_token(user, token):
+            # Validate password using the serializer
+            serializer = BaseUserSerializer(
+                user, data={"password": password}, partial=True
+            )
+            if serializer.is_valid():
+                user.set_password(password)
+                user.is_active = True
+                user.save()
+
+                # Send member number email
+                try:
+                    send_account_activated_email(user)
+                except Exception as e:
+                    # Log the error (use your preferred logging mechanism)
+                    print(f"Failed to send email to {user.email}: {str(e)}")
+                return Response(
+                    {"message": "Account activated successfully"},
+                    status=status.HTTP_200_OK,
+                )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST
+        )

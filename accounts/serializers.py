@@ -1,6 +1,9 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
 
 from accounts.validators import (
     validate_password_digit,
@@ -9,7 +12,11 @@ from accounts.validators import (
     validate_password_symbol,
 )
 from verification.models import VerificationCode
-from accounts.utils import send_registration_confirmation_email
+from accounts.utils import (
+    send_registration_confirmation_email,
+    send_account_created_by_admin_email,
+)
+from saccoapi.settings import DOMAIN
 
 User = get_user_model()
 
@@ -70,8 +77,6 @@ class BaseUserSerializer(serializers.ModelSerializer):
         user.is_active = True
         user.save()
 
-        send_registration_confirmation_email(user)
-
         return user
 
 
@@ -79,6 +84,7 @@ class MemberSerializer(BaseUserSerializer):
     def create(self, validated_data):
         user = self.create_user(validated_data, "is_member")
         user.save()
+        send_registration_confirmation_email(user)
 
         return user
 
@@ -87,6 +93,7 @@ class SystemAdminSerializer(BaseUserSerializer):
     def create(self, validated_data):
         user = self.create_user(validated_data, "is_system_admin")
         user.save()
+        send_registration_confirmation_email(user)
 
         return user
 
@@ -173,3 +180,30 @@ Normal login
 class UserLoginSerializer(serializers.Serializer):
     member_no = serializers.CharField(required=True)
     password = serializers.CharField(required=True, write_only=True)
+
+
+"""
+SACCO Admins Serializers
+- They can create new members.
+- The members are already approved.
+- A password has to be set or they reset.
+"""
+
+
+class MemberCreatedByAdminSerializer(BaseUserSerializer):
+    password = serializers.CharField(required=False, write_only=True)
+
+    def create(self, validated_data):
+        # validated_data["password"] = None
+        user = self.create_user(validated_data, "is_member")
+        user.is_approved = True
+        user.save()
+
+        token_generator = PasswordResetTokenGenerator()
+        token = token_generator.make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        activation_link = f"{DOMAIN}/activate/{uid}/{token}"
+
+        send_account_created_by_admin_email(user, activation_link)
+
+        return user

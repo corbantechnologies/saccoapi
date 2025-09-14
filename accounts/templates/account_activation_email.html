@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>Your Membership Number</title>
+        <style>
+            body {
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                background-color: #f8f9fa;
+                margin: 0;
+                padding: 0;
+                color: #2d3748;
+            }
+
+            .container {
+                max-width: 640px;
+                margin: 30px auto;
+                background: #ffffff;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+
+            .header {
+                background: linear-gradient(135deg, #f6ad55, #ed8936);
+                color: #ffffff;
+                text-align: center;
+                padding: 30px 20px;
+            }
+
+            .header h2 {
+                margin: 0;
+                font-size: 28px;
+                font-weight: 600;
+            }
+
+            .content {
+                padding: 30px;
+                line-height: 1.8;
+            }
+
+            .content p {
+                margin: 0 0 15px;
+            }
+
+            .membership-number {
+                font-size: 22px;
+                color: #ed8936;
+                font-weight: bold;
+                text-align: center;
+                margin: 25px 0;
+                padding: 15px;
+                background-color: #fef5e7;
+                border-radius: 8px;
+            }
+
+            .btn {
+                display: inline-block;
+                padding: 12px 24px;
+                background: linear-gradient(135deg, #f6ad55, #ed8936);
+                color: #ffffff;
+                text-decoration: none;
+                border-radius: 6px;
+                font-weight: 500;
+                transition: background 0.3s ease, transform 0.2s ease;
+                margin: 10px 5px;
+            }
+
+            .btn:hover {
+                background: linear-gradient(135deg, #ed8936, #c05621);
+                transform: translateY(-2px);
+            }
+
+            .btn.secondary {
+                background: linear-gradient(135deg, #718096, #4a5568);
+            }
+
+            .btn.secondary:hover {
+                background: linear-gradient(135deg, #4a5568, #2d3748);
+            }
+
+            .footer {
+                text-align: center;
+                background-color: #edf2f7;
+                color: #718096;
+                padding: 15px;
+                font-size: 13px;
+                border-top: 1px solid #e2e8f0;
+            }
+
+            .footer a {
+                color: #ed8936;
+                text-decoration: none;
+            }
+
+            .footer a:hover {
+                text-decoration: underline;
+            }
+        </style>
+    </head>
+
+    <body style="font-family: 'Helvetica Neue', Arial, sans-serif; line-height: 1.8; color: #2d3748;">
+        <div class="container">
+            <div class="header">
+                <h2>Congratulations, {{ user.first_name }}!</h2>
+            </div>
+            <div class="content">
+                <p>Your application to join Wananchi Mali Platform has been approved!</p>
+                <p class="membership-number"><strong>Your Membership Number:</strong> {{ user.member_no }}</p>
+                <p>Thank you for joining Wananchi Mali. We are excited to have you as a member of our community.</p>
+                <p>Your account has been created. To activate your account, please set your password by clicking the
+                    link below:</p>
+                <p>
+                    <a href="{{ activation_link }}"
+                        style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+                        Set Your Password
+                    </a>
+                </p>
+                <p>If you have any questions, please contact us at <a
+                        href="mailto:wananchimaliplatform@gmail.com">wananchimaliplatform@gmail.com</a>.</p>
+            </div>
+            <div class="footer">
+                <p>&copy; {{ current_year }} Wananchi Mali. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+
+</html>
