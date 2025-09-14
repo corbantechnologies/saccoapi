@@ -11,6 +11,7 @@ from accounts.views import (
     PasswordResetView,
     MemberDetailView,
     MemberListView,
+    MemberCreatedByAdminSerializer, ActivateAccountView
 )
 
 app_name = "accounts"
@@ -23,6 +24,7 @@ urlpatterns = [
     # System admin activities
     path("", MemberListView.as_view(), name="members"),
     path("member/<str:member_no>/", MemberDetailView.as_view(), name="member-detail"),
+    path("new-member/", MemberCreatedByAdminSerializer.as_view(), name="new-member"),
     path(
         "approve-member/<str:member_no>/",
         ApproveMemberView.as_view(),
@@ -31,4 +33,6 @@ urlpatterns = [
     # Password reset
     path("password/reset/", RequestPasswordResetView.as_view(), name="password-reset"),
     path("password/new/", PasswordResetView.as_view(), name="password-reset"),
+    # Account activation
+    path("password/activate-account/", ActivateAccountView.as_view(), name="activate-account"),
 ]

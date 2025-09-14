@@ -176,3 +176,27 @@ def send_password_reset_email(user, verification_code):
     except Exception as e:
         logger.error(f"Error sending email to {user.email}: {str(e)}")
         return None
+
+
+def send_account_created_by_admin_email(user, activation_link=None):
+    email_body = render_to_string(
+        "account_activation_email.html",
+        {
+            "user": user,
+            "activation_link": activation_link,
+            "current_year": datetime.now().year,
+        },
+    )
+    params = {
+        "from": "Wananchi Mali <onboarding@wananchimali.com>",
+        "to": [user.email],
+        "subject": "Activate Your Wananchi Mali Account",
+        "html": email_body,
+    }
+    try:
+        response = resend.Emails.send(params)
+        logger.info(f"Email sent to {user.email} with response: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"Error sending email to {user.email}: {str(e)}")
+        return None
