@@ -274,7 +274,7 @@ class ActivateAccountView(APIView):
 
                 # Send member number email
                 try:
-                    send_member_number_email(user=user)
+                    send_account_activated_email(user)
                 except Exception as e:
                     # Log the error (use your preferred logging mechanism)
                     print(f"Failed to send email to {user.email}: {str(e)}")
