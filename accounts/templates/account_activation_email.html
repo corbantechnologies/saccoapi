@@ -107,19 +107,15 @@
             <div class="content">
                 <p>Your application to join Wananchi Mali Platform has been approved!</p>
                 <p class="membership-number"><strong>Your Membership Number:</strong> {{ user.member_no }}</p>
-                <p>You can now log in to your account using the Member Number ({{ user.member_no }}) and the password
-                    given below:
+                <p>Thank you for joining Wananchi Mali. We are excited to have you as a member of our community.</p>
+                <p>Your account has been created. To activate your account, please set your password by clicking the
+                    link below:</p>
+                <p>
+                    <a href="{{ activation_link }}"
+                        style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">
+                        Set Your Password
+                    </a>
                 </p>
-                <p><strong>Password:</strong> {{ password }}</p>
-                <p><strong>Important:</strong>
-
-                    Please remember this password, as it will be required to access your Wananchi Mali
-                    account.</p>
-                <p>If you’ve forgotten your password, you can reset it using the button below:</p>
-                <div style="text-align: center; margin: 20px 0;">
-                    <a href="{{ site_url }}" class="btn">Log In to Your Account</a>
-                    <a href="{{ password_reset_url }}" class="btn secondary">Reset Password</a>
-                </div>
                 <p>If you have any questions, please contact us at <a
                         href="mailto:wananchimaliplatform@gmail.com">wananchimaliplatform@gmail.com</a>.</p>
             </div>
