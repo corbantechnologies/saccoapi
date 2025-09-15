@@ -5,7 +5,7 @@ from savingstypes.models import SavingsType
 
 
 class SavingsAccountSerializer(serializers.ModelSerializer):
-    user = serializers.CharField(source="user.member_no", read_only=True)
+    member = serializers.CharField(source="member.member_no", read_only=True)
     account_type = serializers.SlugRelatedField(
         queryset=SavingsType.objects.all(), slug_field="name"
     )
@@ -13,7 +13,7 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = SavingsAccount
         fields = [
-            "user",
+            "member",
             "account_type",
             "account_number",
             "balance",
