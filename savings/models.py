@@ -10,7 +10,7 @@ User = get_user_model()
 
 
 class SavingsAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
-    user = models.ForeignKey(
+    member = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="savings_accounts"
     )
     account_type = models.ForeignKey(
@@ -29,10 +29,10 @@ class SavingsAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.account_number} - {self.user.get_full_name()}"
+        return f"{self.account_number} - {self.member.get_full_name()}"
     
 
     def save(self, *args, **kwargs):
         if not self.identity:
-            self.identity = slugify(f"{self.user.member_no}-{self.account_number}")
+            self.identity = slugify(f"{self.member.member_no}-{self.account_number}")
         super().save(*args, **kwargs)

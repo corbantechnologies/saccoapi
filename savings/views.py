@@ -12,8 +12,11 @@ class SavingsAccountListCreateView(generics.ListCreateAPIView):
         IsAuthenticated,
     ]
 
+    def perform_create(self, serializer):
+        serializer.save(member=self.request.user)
+
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
+        return self.queryset.filter(member=self.request.user)
 
 
 class SavingsAccountDetailView(generics.RetrieveAPIView):
@@ -25,4 +28,4 @@ class SavingsAccountDetailView(generics.RetrieveAPIView):
     lookup_field = "identity"
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
+        return self.queryset.filter(member=self.request.user)
