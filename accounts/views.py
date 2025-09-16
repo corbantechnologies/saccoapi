@@ -1,4 +1,4 @@
-import requests
+import logging
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -24,7 +24,10 @@ from accounts.utils import (
     send_member_number_email,
     send_account_activated_email,
 )
+from savings.models import SavingsAccount
+from savingstypes.models import SavingsType
 
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -146,7 +149,8 @@ class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class ApproveMemberView(generics.RetrieveUpdateAPIView):
     """
-    Approve a new member
+    Approve a new member after self registration.
+    Email is compulsory
     """
 
     permission_classes = (IsSystemAdmin,)
@@ -168,6 +172,21 @@ class ApproveMemberView(generics.RetrieveUpdateAPIView):
         instance.is_approved = True
         instance.is_active = True
         instance.save()
+
+        # Create SavingsAccount for each SavingsType
+        savings_types = SavingsType.objects.all()
+        created_accounts = []
+        for savings_type in savings_types:
+            if not SavingsAccount.objects.filter(
+                member=instance, account_type=savings_type
+            ).exists():
+                account = SavingsAccount.objects.create(
+                    member=instance, account_type=savings_type, is_active=True
+                )
+                created_accounts.append(str(account))
+        logger.info(
+            f"Created {len(created_accounts)} SavingsAccounts for {instance.member_no}: {', '.join(created_accounts)}"
+        )
 
         # Send member number email
         try:
@@ -236,6 +255,23 @@ class MemberCreatedByAdminView(generics.CreateAPIView):
     permission_classes = (IsSystemAdmin,)
     serializer_class = MemberCreatedByAdminSerializer
     queryset = User.objects.all()
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+
+        savings_types = SavingsType.objects.all()
+        created_accounts = []
+        for savings_type in savings_types:
+            if not SavingsAccount.objects.filter(
+                member=user, account_type=savings_type
+            ).exists():
+                account = SavingsAccount.objects.create(
+                    member=user, account_type=savings_type, is_active=True
+                )
+                created_accounts.append(str(account))
+        logger.info(
+            f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
+        )
 
 
 class ActivateAccountView(APIView):

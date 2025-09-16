@@ -29,7 +29,7 @@ class SavingsAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.account_number} - {self.member.get_full_name()}"
+        return f"{self.account_number} - {self.member.member_no}"
     
 
     def save(self, *args, **kwargs):

@@ -17,12 +17,8 @@ from accounts.abstracts import (
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
-    def _create_user(self, email, password, **extra_fields):
-        if not email:
-            raise ValueError("The given email must be set")
-        email = self.normalize_email(email)
-        user = self.model(email=email, **extra_fields)
-
+    def _create_user(self, password, **extra_fields):
+        user = self.model(**extra_fields)
         if password:
             user.set_password(password)
         else:
@@ -30,12 +26,12 @@ class UserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_user(self, email, password=None, **extra_fields):
+    def create_user(self, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", False)
         extra_fields.setdefault("is_superuser", False)
         extra_fields.setdefault("is_active", True)
 
-        return self._create_user(email, password, **extra_fields)
+        return self._create_user(password, **extra_fields)
 
     def create_superuser(self, email, password, **extra_fields):
         extra_fields.setdefault("is_staff", True)
@@ -62,22 +58,22 @@ class User(
 ):
 
     # Personal Details
-    salutation = models.CharField(max_length=25)
+    salutation = models.CharField(max_length=25, blank=True, null=True)
     first_name = models.CharField(max_length=255)
     middle_name = models.CharField(max_length=255, blank=True, null=True)
     last_name = models.CharField(max_length=255)
-    email = models.EmailField()
+    email = models.EmailField(blank=True, null=True)
     dob = models.DateField(blank=True, null=True)
     gender = models.CharField(max_length=255)
     avatar = CloudinaryField("avatars", blank=True, null=True)
 
     # Identity
-    id_type = models.CharField(max_length=255)
-    id_number = models.CharField(max_length=255)
-    tax_pin = models.CharField(max_length=255)
+    id_type = models.CharField(max_length=255, blank=True, null=True)
+    id_number = models.CharField(max_length=255, blank=True, null=True)
+    tax_pin = models.CharField(max_length=255, blank=True, null=True)
 
     # Contact & Address Details
-    phone = models.CharField(max_length=255)
+    phone = models.CharField(max_length=255, blank=True, null=True)
     county = models.CharField(max_length=255, blank=True, null=True)
 
     # Employment Status
@@ -97,16 +93,11 @@ class User(
 
     USERNAME_FIELD = "member_no"
     REQUIRED_FIELDS = [
-        "email",
         "password",
         "salutation",
         "first_name",
         "last_name",
         "gender",
-        "id_type",
-        "id_number",
-        "tax_pin",
-        "phone",
         "employment_type",
     ]
 
