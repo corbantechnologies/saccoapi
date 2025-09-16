@@ -23,8 +23,7 @@ User = get_user_model()
 
 class BaseUserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
-        required=True,
-        validators=[UniqueValidator(queryset=User.objects.all())],
+        required=False,
     )
     password = serializers.CharField(
         max_length=128,
@@ -192,6 +191,7 @@ SACCO Admins Serializers
 
 class MemberCreatedByAdminSerializer(BaseUserSerializer):
     password = serializers.CharField(required=False, write_only=True)
+    email = serializers.EmailField(required=False)
 
     def create(self, validated_data):
         # validated_data["password"] = None
@@ -204,6 +204,8 @@ class MemberCreatedByAdminSerializer(BaseUserSerializer):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         activation_link = f"{DOMAIN}/activate/{uid}/{token}"
 
-        send_account_created_by_admin_email(user, activation_link)
+        # Send member number email if email is provided
+        if validated_data.get("email"):
+            send_account_created_by_admin_email(user, activation_link)
 
         return user
