@@ -62,22 +62,22 @@ class User(
 ):
 
     # Personal Details
-    salutation = models.CharField(max_length=25)
+    salutation = models.CharField(max_length=25, blank=True, null=True)
     first_name = models.CharField(max_length=255)
     middle_name = models.CharField(max_length=255, blank=True, null=True)
     last_name = models.CharField(max_length=255)
-    email = models.EmailField()
+    email = models.EmailField(blank=True, null=True)
     dob = models.DateField(blank=True, null=True)
     gender = models.CharField(max_length=255)
     avatar = CloudinaryField("avatars", blank=True, null=True)
 
     # Identity
-    id_type = models.CharField(max_length=255)
-    id_number = models.CharField(max_length=255)
-    tax_pin = models.CharField(max_length=255)
+    id_type = models.CharField(max_length=255, blank=True, null=True)
+    id_number = models.CharField(max_length=255, blank=True, null=True)
+    tax_pin = models.CharField(max_length=255, blank=True, null=True)
 
     # Contact & Address Details
-    phone = models.CharField(max_length=255)
+    phone = models.CharField(max_length=255, blank=True, null=True)
     county = models.CharField(max_length=255, blank=True, null=True)
 
     # Employment Status
@@ -97,16 +97,11 @@ class User(
 
     USERNAME_FIELD = "member_no"
     REQUIRED_FIELDS = [
-        "email",
         "password",
         "salutation",
         "first_name",
         "last_name",
         "gender",
-        "id_type",
-        "id_number",
-        "tax_pin",
-        "phone",
         "employment_type",
     ]
 
