@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.validators import MinValueValidator
 from django.db import transaction
+from datetime import date
 
 from accounts.abstracts import TimeStampedModel, UniversalIdModel, ReferenceModel
 from savings.models import SavingsAccount
@@ -61,7 +62,8 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
     )
     is_active = models.BooleanField(default=True)
     receipt_number = models.CharField(max_length=50, blank=True, null=True)
-    
+    identity = models.CharField(max_length=100, blank=True, null=True, unique=True)
+
     # Mpesa fields: to be added later
 
     class Meta:
@@ -77,8 +79,22 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
     def __str__(self):
         return f"Deposit {self.reference} - {self.amount} to {self.savings_account}"
 
+    def generate_identity(self):
+        prefix = "DEP"
+        today = date.today()
+        date_str = today.strftime("%Y%m%d")
+        with transaction.atomic():
+            # Prevent race conditions
+            deposits_today = SavingsDeposit.objects.filter(
+                identity__startswith=f"{prefix}{date_str}"
+            ).count()
+            sequence = deposits_today + 1
+            self.identity = f"{prefix}{date_str}{sequence:04d}"
+
     def save(self, *args, **kwargs):
         with transaction.atomic():
+            if not self.identity:
+                self.identity = self.generate_identity()
             if self.is_active and self.transaction_status == "Completed":
                 # Update the savings account balance
                 self.savings_account.balance += self.amount

@@ -25,6 +25,7 @@ class SavingsDepositSerializer(serializers.ModelSerializer):
             "transaction_status",
             "is_active",
             "receipt_number",
+            "identity",
             "created_at",
             "updated_at",
             "reference",

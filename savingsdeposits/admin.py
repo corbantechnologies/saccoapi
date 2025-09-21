@@ -19,7 +19,7 @@ class SavingsDepositAdmin(admin.ModelAdmin):
         "deposited_by__username",
         "phone_number",
     )
-    readonly_fields = ("created_at", "updated_at", "universal_id", "reference")
+    readonly_fields = ("created_at", "updated_at", "identity", "reference")
     ordering = ("-created_at",)
 
 
