@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
+from savingsdeposits.serializers import SavingsDepositSerializer
 
 
 class SavingsAccountSerializer(serializers.ModelSerializer):
@@ -9,6 +10,7 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
     account_type = serializers.SlugRelatedField(
         queryset=SavingsType.objects.all(), slug_field="name"
     )
+    deposits = SavingsDepositSerializer(many=True, read_only=True)
 
     class Meta:
         model = SavingsAccount
@@ -22,4 +24,5 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
             "reference",
             "created_at",
             "updated_at",
+            "deposits",
         ]
