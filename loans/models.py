@@ -29,6 +29,17 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         max_digits=12, decimal_places=2, default=0.00
     )
     is_active = models.BooleanField(default=True)
+
+    # TODO: Implement approval workflow
+    is_approved = models.BooleanField(default=False)
+    approval_date = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_loans",
+    )
     identity = models.CharField(max_length=100, blank=True, null=True, unique=True)
     last_interest_calculation = models.DateTimeField(null=True, blank=True)
 
@@ -69,4 +80,6 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
             self.identity = slugify(f"{self.user.member_no}-{self.account_number}")
         if self.outstanding_balance <= 0:
             self.is_active = False
+        if self.is_approved and not self.approval_date:
+            self.approval_date = datetime.now()
         super().save(*args, **kwargs)
