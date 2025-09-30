@@ -81,7 +81,6 @@ class LoanRepayment(TimeStampedModel, UniversalIdModel, ReferenceModel):
         today = date.today()
         date_str = today.strftime("%Y%m%d")
         with transaction.atomic():
-            # Prevent race conditions
             repayments_today = LoanRepayment.objects.filter(
                 identity__startswith=f"{prefix}{date_str}"
             ).count()
@@ -91,23 +90,18 @@ class LoanRepayment(TimeStampedModel, UniversalIdModel, ReferenceModel):
     def save(self, *args, **kwargs):
         with transaction.atomic():
             if not self.identity:
-                self.identity = self.generate_identity()
+                self.generate_identity()
 
-            # Update the loan account balance
             if self.transaction_status == "Completed":
-                self.loan_account.outstanding_balance -= self.amount
-                if self.loan_account.outstanding_balance < 0:
-                    self.loan_account.outstanding_balance = 0
-                    self.loan_account.is_active = False
-                self.loan_account.save()
-            # If it's an interest payment, reduce the interest accrued
-            if (
-                self.repayment_type == "Interest Payment"
-                and self.transaction_status == "Completed"
-            ):
-                self.loan_account.interest_accrued -= self.amount
-                if self.loan_account.interest_accrued <= 0:
-                    self.loan_account.interest_accrued = 0
+                if self.repayment_type == "Interest Payment":
+                    self.loan_account.interest_accrued -= self.amount
+                    if self.loan_account.interest_accrued < 0:
+                        self.loan_account.interest_accrued = 0
+                else:
+                    self.loan_account.outstanding_balance -= self.amount
+                    if self.loan_account.outstanding_balance <= 0:
+                        self.loan_account.outstanding_balance = 0
+                        self.loan_account.is_active = False
                 self.loan_account.save()
 
             super().save(*args, **kwargs)

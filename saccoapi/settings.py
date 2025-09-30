@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "savings",
     "savingsdeposits",
     "loans",
+    "loanrepayments",
 ]
 
 MIDDLEWARE = [

@@ -51,7 +51,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
 
     def calculate_monthly_interest(self):
         """
-        Calculate the monthly interest based on the loan amount and interest rate.
+        Calculate monthly compound interest based on loan type's interest rate.
         """
         if not self.is_active:
             return
@@ -60,12 +60,9 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         if not self.last_interest_calculation:
             self.last_interest_calculation = self.created_at
 
-        # check if a month has passed since the last calculation
         months_passed = relativedelta(now, self.last_interest_calculation).months
         if months_passed >= 1:
             monthly_rate = self.loan_type.interest_rate / 12 / 100
-            monthly_interest = self.outstanding_balance * monthly_rate
-            # Compound interest for each month passed
             monthly_interest = (
                 self.outstanding_balance + self.interest_accrued
             ) * monthly_rate
@@ -76,8 +73,10 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     def save(self, *args, **kwargs):
         if not self.identity:
             self.identity = slugify(f"{self.user.member_no}-{self.account_number}")
-        if self.outstanding_balance <= 0:
-            self.is_active = False
         if self.is_approved and not self.approval_date:
             self.approval_date = datetime.now()
+            if not self.outstanding_balance:
+                self.outstanding_balance = self.loan_amount
+        if self.outstanding_balance <= 0:
+            self.is_active = False
         super().save(*args, **kwargs)

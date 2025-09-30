@@ -8,7 +8,9 @@ class SavingsDepositSerializer(serializers.ModelSerializer):
     savings_account = serializers.SlugRelatedField(
         slug_field="account_number", queryset=SavingsAccount.objects.all()
     )
-    deposited_by = serializers.CharField(source="deposited_by.username", read_only=True)
+    deposited_by = serializers.CharField(
+        source="deposited_by.member_no", read_only=True
+    )
     is_active = serializers.BooleanField(default=True)
 
     class Meta:
