@@ -111,7 +111,7 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
             super()
             .get_queryset()
             .filter(id=self.request.user.id)
-            .prefetch_related("savings_accounts")
+            .prefetch_related("savings_accounts", "loans")
         )
 
 
@@ -318,7 +318,8 @@ class ActivateAccountView(APIView):
                     send_account_activated_email(user)
                 except Exception as e:
                     # Log the error (use your preferred logging mechanism)
-                    print(f"Failed to send email to {user.email}: {str(e)}")
+                    logger.error(f"Failed to send email to {user.email}: {str(e)}")
+                    # print(f"Failed to send email to {user.email}: {str(e)}")
                 return Response(
                     {"message": "Account activated successfully"},
                     status=status.HTTP_200_OK,

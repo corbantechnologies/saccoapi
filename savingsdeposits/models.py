@@ -35,7 +35,7 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
 
     savings_account = models.ForeignKey(
         SavingsAccount,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="deposits",
     )
     deposited_by = models.ForeignKey(
