@@ -12,9 +12,7 @@ User = get_user_model()
 
 
 class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
-    user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="loan_accounts"
-    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="loans")
     loan_type = models.ForeignKey(
         LoanType, on_delete=models.PROTECT, related_name="loan_accounts"
     )

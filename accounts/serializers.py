@@ -18,6 +18,7 @@ from accounts.utils import (
 )
 from saccoapi.settings import DOMAIN
 from savings.serializers import SavingsAccountSerializer
+from loans.serializers import LoanAccountSerializer
 
 User = get_user_model()
 
@@ -39,6 +40,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
     )
     avatar = serializers.ImageField(use_url=True, required=False)
     savings_accounts = SavingsAccountSerializer(many=True, read_only=True)
+    loans = LoanAccountSerializer(many=True, read_only=True)
 
     class Meta:
         model = User
@@ -71,6 +73,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "updated_at",
             "reference",
             "savings_accounts",
+            "loans",
         )
 
     def create_user(self, validated_data, role_field):
