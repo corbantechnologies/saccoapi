@@ -8,6 +8,7 @@ from rest_framework.authtoken.models import Token
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from django.db import transaction
 
 from accounts.serializers import (
     BaseUserSerializer,
@@ -17,6 +18,7 @@ from accounts.serializers import (
     PasswordResetSerializer,
     UserLoginSerializer,
     MemberCreatedByAdminSerializer,
+    BulkMemberCreatedByAdminSerializer,
 )
 from accounts.permissions import IsSystemAdmin
 from accounts.utils import (
@@ -277,6 +279,44 @@ class MemberCreatedByAdminView(generics.CreateAPIView):
         logger.info(
             f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
         )
+
+
+class BulkMemberCreatedByAdminView(APIView):
+    permission_classes = (IsSystemAdmin,)
+
+    def post(self, request):
+        serializer = BulkMemberCreatedByAdminSerializer(data=request.data)
+        if serializer.is_valid(raise_exception=True):
+            users = serializer.save()
+
+            # Your existing savings account creation logic
+            for user in users:
+                savings_types = SavingsType.objects.all()
+                created_accounts = []
+                for savings_type in savings_types:
+                    if not SavingsAccount.objects.filter(
+                        member=user, account_type=savings_type
+                    ).exists():
+                        account = SavingsAccount.objects.create(
+                            member=user, account_type=savings_type, is_active=True
+                        )
+                        created_accounts.append(str(account))
+                logger.info(
+                    f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
+                )
+
+            # FIXED: Use MemberCreatedByAdminSerializer for response (handles User instances)
+            return Response(
+                {
+                    "message": f"Successfully created {len(users)} members.",
+                    "members": MemberCreatedByAdminSerializer(  # Changed here
+                        users, many=True
+                    ).data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ActivateAccountView(APIView):

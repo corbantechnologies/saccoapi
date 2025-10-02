@@ -13,6 +13,7 @@ from accounts.views import (
     MemberListView,
     MemberCreatedByAdminView,
     ActivateAccountView,
+    BulkMemberCreatedByAdminView,
 )
 
 app_name = "accounts"
@@ -30,6 +31,11 @@ urlpatterns = [
         "approve-member/<str:member_no>/",
         ApproveMemberView.as_view(),
         name="approve-member",
+    ),
+    path(
+        "new-members/bulk-create/",
+        BulkMemberCreatedByAdminView.as_view(),
+        name="bulk-create-members",
     ),
     # Password reset
     path("password/reset/", RequestPasswordResetView.as_view(), name="password-reset"),
