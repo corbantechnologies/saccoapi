@@ -3,8 +3,22 @@ from rest_framework.permissions import IsAuthenticated
 
 from loans.models import LoanAccount
 from loans.serializers import LoanAccountSerializer
+from accounts.permissions import IsSystemAdminOrReadOnly
 
 
+# SACCO Admin creates loan accounts for members
+class LoanAccountCreateByAdminView(generics.CreateAPIView):
+    queryset = LoanAccount.objects.all()
+    serializer_class = LoanAccountSerializer
+    permission_classes = [
+        IsSystemAdminOrReadOnly,
+    ]
+
+    def perform_create(self, serializer):
+        serializer.save(approved_by=self.request.user)
+
+
+# Members can view and create their own loan accounts
 class LoanAccountListCreateView(generics.ListCreateAPIView):
     queryset = LoanAccount.objects.all()
     serializer_class = LoanAccountSerializer

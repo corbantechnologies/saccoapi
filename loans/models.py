@@ -47,7 +47,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.account_number} - {self.user.get_full_name()}"
+        return f"{self.account_number}"
 
     def calculate_monthly_interest(self):
         """
