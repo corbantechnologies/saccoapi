@@ -54,6 +54,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "member_no",
             "salutation",
             "first_name",
+            "middle_name",
             "last_name",
             "dob",
             "gender",
