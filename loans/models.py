@@ -1,7 +1,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
-from datetime import datetime
+from django.utils import timezone
 from dateutil.relativedelta import relativedelta
 
 from accounts.abstracts import TimeStampedModel, UniversalIdModel, ReferenceModel
@@ -56,7 +56,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         if not self.is_active:
             return
 
-        now = datetime.now()
+        now = timezone.now()
         if not self.last_interest_calculation:
             self.last_interest_calculation = self.created_at
 
@@ -74,7 +74,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         if not self.identity:
             self.identity = slugify(f"{self.user.member_no}-{self.account_number}")
         if self.is_approved and not self.approval_date:
-            self.approval_date = datetime.now()
+            self.approval_date = timezone.now()
             if not self.outstanding_balance:
                 self.outstanding_balance = self.loan_amount
         if self.outstanding_balance <= 0:
