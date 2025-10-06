@@ -9,7 +9,6 @@ from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.db import transaction
-from rest_framework.throttling import UserRateThrottle
 
 from accounts.serializers import (
     BaseUserSerializer,
@@ -255,7 +254,6 @@ class PasswordResetView(APIView):
 class PasswordChangeView(generics.UpdateAPIView):
     permission_classes = (IsAuthenticated,)
     serializer_class = PasswordChangeSerializer
-    throttle_classes = [UserRateThrottle]
 
     def get_object(self):
         return self.request.user
