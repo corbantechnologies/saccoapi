@@ -14,6 +14,7 @@ from accounts.views import (
     MemberCreatedByAdminView,
     ActivateAccountView,
     BulkMemberCreatedByAdminView,
+    PasswordChangeView,
 )
 
 app_name = "accounts"
@@ -40,6 +41,7 @@ urlpatterns = [
     # Password reset
     path("password/reset/", RequestPasswordResetView.as_view(), name="password-reset"),
     path("password/new/", PasswordResetView.as_view(), name="password-reset"),
+    path("password/change/", PasswordChangeView.as_view(), name="password-change"),
     # Account activation
     path(
         "password/activate-account/",

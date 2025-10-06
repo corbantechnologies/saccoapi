@@ -9,6 +9,7 @@ from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.db import transaction
+from rest_framework.throttling import UserRateThrottle
 
 from accounts.serializers import (
     BaseUserSerializer,
@@ -19,6 +20,7 @@ from accounts.serializers import (
     UserLoginSerializer,
     MemberCreatedByAdminSerializer,
     BulkMemberCreatedByAdminSerializer,
+    PasswordChangeSerializer,
 )
 from accounts.permissions import IsSystemAdmin
 from accounts.utils import (
@@ -248,6 +250,21 @@ class PasswordResetView(APIView):
                 status=status.HTTP_200_OK,
             )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordChangeView(generics.UpdateAPIView):
+    permission_classes = (IsAuthenticated,)
+    serializer_class = PasswordChangeSerializer
+    throttle_classes = [UserRateThrottle]
+
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        return Response(
+            {"detail": "Password changed successfully"}, status=status.HTTP_200_OK
+        )
 
 
 """
