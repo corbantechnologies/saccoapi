@@ -1,4 +1,4 @@
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, update_session_auth_hash
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from django.db import transaction
@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
+
 
 from accounts.validators import (
     validate_password_digit,
@@ -53,6 +54,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "member_no",
             "salutation",
             "first_name",
+            "middle_name",
             "last_name",
             "dob",
             "gender",
@@ -176,6 +178,37 @@ class PasswordResetSerializer(serializers.Serializer):
         verification.used = True
         verification.save()
 
+        return user
+
+
+class PasswordChangeSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True, write_only=True)
+    password = serializers.CharField(
+        max_length=128,
+        min_length=5,
+        write_only=True,
+        validators=[
+            validate_password_digit,
+            validate_password_uppercase,
+            validate_password_symbol,
+            validate_password_lowercase,
+        ],
+    )
+
+    def validate(self, attrs):
+        user = self.instance  # Use self.instance instead of context
+        if not user.check_password(attrs["old_password"]):
+            raise serializers.ValidationError(
+                {"old_password": "Incorrect old password"}
+            )
+        return attrs
+
+    def save(self):
+        user = self.instance
+        password = self.validated_data.get("password")
+        user.set_password(password)
+        user.save()
+        update_session_auth_hash(self.context["request"], user)  # Maintain session
         return user
 
 
