@@ -3,6 +3,7 @@ from rest_framework import serializers
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
 from savingsdeposits.serializers import SavingsDepositSerializer
+from savingswithdrawals.serializers import SavingsWithdrawalSerializer
 
 
 class SavingsAccountSerializer(serializers.ModelSerializer):
@@ -11,6 +12,7 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
         queryset=SavingsType.objects.all(), slug_field="name"
     )
     deposits = SavingsDepositSerializer(many=True, read_only=True)
+    withdrawals = SavingsWithdrawalSerializer(many=True, read_only=True)
 
     class Meta:
         model = SavingsAccount
@@ -25,4 +27,5 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "deposits",
+            "withdrawals",
         ]
