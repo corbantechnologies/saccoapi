@@ -4,10 +4,7 @@ from datetime import datetime
 
 from django.template.loader import render_to_string
 
-from saccoapi.settings import DOMAIN
-
 logger = logging.getLogger(__name__)
-
 
 current_year = datetime.now().year
 
