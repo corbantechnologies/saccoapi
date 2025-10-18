@@ -11,6 +11,7 @@ class SavingsWithdrawalSerializer(serializers.ModelSerializer):
     withdrawn_by = serializers.CharField(
         source="withdrawn_by.member_no", read_only=True
     )
+    savings_account_detail = serializers.SerializerMethodField()
 
     class Meta:
         model = SavingsWithdrawal
@@ -25,6 +26,7 @@ class SavingsWithdrawalSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "reference",
+            "savings_account_detail",
         )
 
     def validate(self, attrs):
@@ -37,3 +39,11 @@ class SavingsWithdrawalSerializer(serializers.ModelSerializer):
                 {"amount": "Withdrawal amount exceeds account balance."}
             )
         return super().validate(attrs)
+
+    def get_savings_account_detail(self, obj):
+        return {
+            "account_number": obj.savings_account.account_number,
+            "account_type": obj.savings_account.account_type.name,
+            "balance": obj.savings_account.balance,
+            "member": obj.savings_account.member.member_no,
+        }

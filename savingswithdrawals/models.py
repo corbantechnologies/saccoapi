@@ -22,6 +22,8 @@ class SavingsWithdrawal(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ("Processing", "Processing"),
         ("Completed", "Completed"),
         ("Failed", "Failed"),
+        ("Approved", "Approved"),
+        ("Rejected", "Rejected"),
     ]
 
     savings_account = models.ForeignKey(
@@ -43,6 +45,7 @@ class SavingsWithdrawal(TimeStampedModel, UniversalIdModel, ReferenceModel):
     )
     receipt_number = models.CharField(blank=True, max_length=50, null=True)
     identity = models.CharField(blank=True, max_length=100, null=True, unique=True)
+    # TODO: Add a field for the admin to enter the reason for the withdrawal status i.e approved or rejected
 
     class Meta:
         verbose_name = "Savings Withdrawal"
