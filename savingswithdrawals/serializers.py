@@ -30,14 +30,14 @@ class SavingsWithdrawalSerializer(serializers.ModelSerializer):
         )
 
     def validate(self, attrs):
-        # Check if the withdrawal amount is greater than the account balance
-        savings_account = attrs["savings_account"]
-        withdrawal_amount = attrs["amount"]
-
-        if withdrawal_amount > savings_account.balance:
-            raise serializers.ValidationError(
-                {"amount": "Withdrawal amount exceeds account balance."}
-            )
+        # Only validate savings_account if it is provided (i.e., during creation)
+        if "savings_account" in attrs:
+            savings_account = attrs["savings_account"]
+            withdrawal_amount = attrs["amount"]
+            if withdrawal_amount > savings_account.balance:
+                raise serializers.ValidationError(
+                    {"amount": "Withdrawal amount exceeds account balance."}
+                )
         return super().validate(attrs)
 
     def get_savings_account_detail(self, obj):

@@ -16,7 +16,7 @@ urlpatterns = [
         name="withdrawal-detail",
     ),
     path(
-        "<str:identity>/",
+        "<str:identity>/update/",
         SavingsWithdrawalUpdateView.as_view(),
         name="withdrawal-update",
     ),
