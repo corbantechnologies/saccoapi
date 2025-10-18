@@ -13,7 +13,9 @@ from savingswithdrawals.utils import (
 class SavingsWithdrawalListCreateView(generics.ListCreateAPIView):
     queryset = SavingsWithdrawal.objects.all()
     serializer_class = SavingsWithdrawalSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def perform_create(self, serializer):
         withdrawal = serializer.save(withdrawn_by=self.request.user)
