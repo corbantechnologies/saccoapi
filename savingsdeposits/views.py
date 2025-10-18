@@ -13,7 +13,7 @@ class SavingsDepositListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         deposit = serializer.save(deposited_by=self.request.user)
         # Send email to the account owner if they have an email address
-        account_owner = deposit.savings_account.user
+        account_owner = deposit.savings_account.member
         if account_owner.email:
             send_deposit_made_email(account_owner, deposit)
 

@@ -49,9 +49,10 @@
             </div>
             <div class="content">
                 <p>Hello {{ user.first_name }} {{ user.last_name }},</p>
-                <p>We are pleased to inform you that a deposit has been successfully made to your savings account.</p>
+                <p>We are pleased to inform you that a deposit has been successfully made to your savings account: <strong>{{ deposit.savings_account.account_number }} - {{ deposit.savings_account.account_type }}</strong>.</p>
                 <p>Below are the details of the deposit:</p>
                 <ul>
+                    <li>Account: {{ deposit.savings_account.account_number }} - {{ deposit.savings_account.account_type }}</li>
                     <li>Deposit Amount: {{ deposit.amount }} {{ deposit.currency }}</li>
                     <li>Deposit Date: {{ deposit.created_at }}</li>
                     <li>Payment Method: {{ deposit.payment_method }}</li>
