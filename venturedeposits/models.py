@@ -26,6 +26,7 @@ class VentureDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
         decimal_places=2,
         validators=[MinValueValidator(0.01)],
     )
+    identity = models.CharField(max_length=200, unique=True, blank=True, null=True)
 
     class Meta:
         verbose_name = "Venture Deposit"
