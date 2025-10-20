@@ -76,7 +76,10 @@ class SavingsWithdrawal(TimeStampedModel, UniversalIdModel, ReferenceModel):
         with transaction.atomic():
             if not self.identity:
                 self.generate_identity()
-            if self.transaction_status == "Completed":
+            if (
+                self.transaction_status == "Completed"
+                or self.transaction_status == "Approved"
+            ):
                 # Update the savings account balance
                 self.savings_account.balance -= self.amount
                 self.savings_account.save()
