@@ -38,7 +38,7 @@ class VentureTypeListCreateView(generics.ListCreateAPIView):
         )
 
 
-class VentureTypeDetailView(generics.RetrieveUpdateDestroyAPIView):
+class VentureTypeDetailView(generics.RetrieveAPIView):
     queryset = VentureType.objects.all()
     serializer_class = VentureTypeSerializer
     permission_classes = [

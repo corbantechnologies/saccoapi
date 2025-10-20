@@ -19,7 +19,7 @@ class VentureAccountListCreateView(generics.ListCreateAPIView):
         return self.queryset.filter(member=self.request.user)
 
 
-class VentureAccountDetailView(generics.RetrieveUpdateDestroyAPIView):
+class VentureAccountDetailView(generics.RetrieveAPIView):
     queryset = VentureAccount.objects.all()
     serializer_class = VentureAccountSerializer
     permission_classes = [
