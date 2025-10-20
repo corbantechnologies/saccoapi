@@ -16,7 +16,7 @@ class SavingsDepositAdmin(admin.ModelAdmin):
     list_filter = ("payment_method", "deposit_type", "transaction_status", "created_at")
     search_fields = (
         "savings_account__account_number",
-        "deposited_by__username",
+        "deposited_by__member_no",
         "phone_number",
     )
     readonly_fields = ("created_at", "updated_at", "identity", "reference")

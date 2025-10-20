@@ -28,4 +28,8 @@ urlpatterns = [
     path("api/v1/loans/", include("loans.urls")),
     path("api/v1/loanrepayments/", include("loanrepayments.urls")),
     path("api/v1/savingswithdrawals/", include("savingswithdrawals.urls")),
+    path("api/v1/venturetypes/", include("venturetypes.urls")),
+    path("api/v1/ventures/", include("ventures.urls")),
+    path("api/v1/venturedeposits/", include("venturedeposits.urls")),
+    path("api/v1/venturepayments/", include("venturepayments.urls")),
 ]

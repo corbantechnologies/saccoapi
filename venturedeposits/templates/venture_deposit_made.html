@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>Venture Purchase Confirmation</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 20px auto;
+                background: #ffffff;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+
+            .header {
+                background-color: #ff9800;
+                color: white;
+                text-align: center;
+                padding: 20px;
+            }
+
+            .content {
+                padding: 20px;
+                color: #333;
+            }
+
+            .footer {
+                text-align: center;
+                background-color: #f4f4f4;
+                color: #777;
+                padding: 10px;
+                font-size: 12px;
+            }
+        </style>
+    </head>
+
+    <body style="font-family: Georgia, 'Times New Roman', Times, serif; line-height: 1.6; color: #333;">
+        <div class="container">
+            <div class="header">
+                <h2>Venture Purchase Confirmation</h2>
+            </div>
+            <div class="content">
+                <p>Hello {{ member.first_name }} {{ member.last_name }},</p>
+                <p>We have recorded a purchase on your venture account with Tamarind SACCO. The amount has been credited
+                    to your account.</p>
+                <p>Below are the details of the transaction:</p>
+                <ul>
+                    <li>Amount: {{ venture_deposit.amount }} KES</li>
+                    <li>Purchase Date: {{ venture_deposit.created_at }}</li>
+                    <li>Reference: {{ venture_deposit.reference }}</li>
+                    <li>Account Number: {{ venture_deposit.venture_account.account_number }}</li>
+                    <li>Updated Account Balance: {{ venture_deposit.venture_account.balance }} KES</li>
+                </ul>
+                <p>If you have any questions about this transaction, please contact our support team.</p>
+                <p>Best regards,<br />The Tamarind SACCO Team</p>
+            </div>
+            <div class="footer">
+                <p>&copy; {{ current_year }} Tamarind SACCO. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+
+</html>

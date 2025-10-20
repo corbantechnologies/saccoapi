@@ -60,6 +60,10 @@ INSTALLED_APPS = [
     "loans",
     "loanrepayments",
     "savingswithdrawals",
+    "venturetypes",
+    "ventures",
+    "venturedeposits",
+    "venturepayments",
 ]
 
 MIDDLEWARE = [
