@@ -14,7 +14,7 @@ class VentureAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         User, on_delete=models.CASCADE, related_name="venture_accounts"
     )
     venture_type = models.ForeignKey(
-        VentureType, on_delete=models.PROTECT, related_name="venture_accounts"
+        VentureType, on_delete=models.PROTECT, related_name="ventures"
     )
     account_number = models.CharField(
         max_length=20, unique=True, default=generate_venture_account_number
