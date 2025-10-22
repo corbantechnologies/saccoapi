@@ -23,3 +23,7 @@ class VentureDepositSerializer(serializers.ModelSerializer):
             "updated_at",
             "reference",
         )
+
+
+class BulkVentureDepositSerializer(serializers.Serializer):
+    deposits = VentureDepositSerializer(many=True)

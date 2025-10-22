@@ -123,6 +123,8 @@ class BulkSavingsDepositView(generics.CreateAPIView):
 
 
 class BulkSavingsDepositUploadView(generics.CreateAPIView):
+    """Upload CSV file for bulk savings deposits."""
+
     permission_classes = [IsSystemAdminOrReadOnly]
     serializer_class = SavingsDepositSerializer  # Added for browsable API
 
@@ -240,7 +242,7 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
                             deposit = deposit_serializer.save(deposited_by=admin)
                             success_count += 1
                             account_owner = deposit.savings_account.member
-                            
+
                         else:
                             error_count += 1
                             errors.append(

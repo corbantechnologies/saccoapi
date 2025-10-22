@@ -23,7 +23,6 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ("Opening Balance", "Opening Balance"),
         ("Payroll Deduction", "Payroll Deduction"),
         ("Individual Deposit", "Individual Deposit"),
-        ("Group Deposit", "Group Deposit"),
         ("Dividend Deposit", "Dividend Deposit"),
         ("Other", "Other"),
     ]
