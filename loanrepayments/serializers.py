@@ -9,6 +9,9 @@ class LoanRepaymentSerializer(serializers.ModelSerializer):
         slug_field="account_number", queryset=LoanAccount.objects.all()
     )
     paid_by = serializers.CharField(source="paid_by.member_no", read_only=True)
+    transaction_status = serializers.ChoiceField(
+        choices=LoanRepayment.TRANSACTION_STATUS_CHOICES, default="Completed"
+    )
 
     class Meta:
         model = LoanRepayment

@@ -23,7 +23,6 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ("Opening Balance", "Opening Balance"),
         ("Payroll Deduction", "Payroll Deduction"),
         ("Individual Deposit", "Individual Deposit"),
-        ("Group Deposit", "Group Deposit"),
         ("Dividend Deposit", "Dividend Deposit"),
         ("Other", "Other"),
     ]
@@ -53,7 +52,7 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
     currency = models.CharField(max_length=10, default="KES")
-    payment_method = models.CharField(max_length=100, choices=PAYMENT_METHOD_CHOICES)
+    payment_method = models.CharField(max_length=100, choices=PAYMENT_METHOD_CHOICES, default="Cash")
     deposit_type = models.CharField(
         max_length=100, choices=DEPOSIT_TYPE_CHOICES, default="Individual Deposit"
     )

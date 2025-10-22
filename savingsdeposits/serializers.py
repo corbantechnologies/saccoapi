@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from savingsdeposits.models import SavingsDeposit
 from savings.models import SavingsAccount
+from decimal import Decimal
 
 
 class SavingsDepositSerializer(serializers.ModelSerializer):
@@ -12,6 +13,12 @@ class SavingsDepositSerializer(serializers.ModelSerializer):
         source="deposited_by.member_no", read_only=True
     )
     is_active = serializers.BooleanField(default=True)
+    transaction_status = serializers.ChoiceField(
+        choices=SavingsDeposit.TRANSACTION_STATUS_CHOICES, default="Completed"
+    )
+    amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
+    )
 
     class Meta:
         model = SavingsDeposit
@@ -32,3 +39,7 @@ class SavingsDepositSerializer(serializers.ModelSerializer):
             "updated_at",
             "reference",
         ]
+
+
+class BulkSavingsDepositSerializer(serializers.Serializer):
+    deposits = SavingsDepositSerializer(many=True)
