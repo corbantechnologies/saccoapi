@@ -14,6 +14,10 @@ from savingstypes.models import SavingsType
 import csv
 import io
 import cloudinary.uploader
+import logging
+from decimal import Decimal
+
+logger = logging.getLogger(__name__)
 
 
 class SavingsDepositListCreateView(generics.ListCreateAPIView):
@@ -120,6 +124,7 @@ class BulkSavingsDepositView(generics.CreateAPIView):
 
 class BulkSavingsDepositUploadView(generics.CreateAPIView):
     permission_classes = [IsSystemAdminOrReadOnly]
+    serializer_class = SavingsDepositSerializer  # Added for browsable API
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get("file")
@@ -134,40 +139,61 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
             csv_file = io.StringIO(csv_content)
             reader = csv.DictReader(csv_file)
         except Exception as e:
+            logger.error(f"Failed to read CSV: {str(e)}")
             return Response(
                 {"error": f"Invalid CSV file: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Get savings types for validation
-        savings_types = SavingsType.objects.filter(is_active=True).values_list(
-            "name", flat=True
-        )
+        try:
+            savings_types = SavingsType.objects.all().values_list("name", flat=True)
+        except Exception as e:
+            logger.error(f"Failed to fetch savings types: {str(e)}")
+            return Response(
+                {"error": "Failed to fetch savings types"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
         admin = request.user
         today = date.today()
         date_str = today.strftime("%Y%m%d")
         prefix = f"SAVINGS-BULK-{date_str}"
 
         # Initialize log
-        log = BulkTransactionLog.objects.create(
-            admin=admin,
-            transaction_type="Savings Deposits",
-            reference_prefix=prefix,
-            success_count=0,
-            error_count=0,
-            file_name=file.name,
-        )
+        try:
+            log = BulkTransactionLog.objects.create(
+                admin=admin,
+                transaction_type="Savings Deposits",
+                reference_prefix=prefix,
+                success_count=0,
+                error_count=0,
+                file_name=file.name,
+            )
+        except Exception as e:
+            logger.error(f"Failed to create BulkTransactionLog: {str(e)}")
+            return Response(
+                {"error": "Failed to initialize transaction log"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         # Upload to Cloudinary
-        buffer = io.StringIO(csv_content)
-        upload_result = cloudinary.uploader.upload(
-            buffer,
-            resource_type="raw",
-            public_id=f"bulk_savings/{prefix}_{file.name}",
-            format="csv",
-        )
-        log.cloudinary_url = upload_result["secure_url"]
-        log.save()
+        try:
+            buffer = io.StringIO(csv_content)
+            upload_result = cloudinary.uploader.upload(
+                buffer,
+                resource_type="raw",
+                public_id=f"bulk_savings/{prefix}_{file.name}",
+                format="csv",
+            )
+            log.cloudinary_url = upload_result["secure_url"]
+            log.save()
+        except Exception as e:
+            logger.error(f"Cloudinary upload failed: {str(e)}")
+            return Response(
+                {"error": "Failed to upload file to storage"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         success_count = 0
         error_count = 0
@@ -184,7 +210,7 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
                         if amount_key in row and row[amount_key] and row[account_key]:
                             try:
                                 amount = float(row[amount_key])
-                                if amount < 0.01:
+                                if amount < Decimal("0.01"):
                                     raise ValueError("Amount must be greater than 0")
                                 deposit_data = {
                                     "savings_account": row[account_key],
@@ -194,7 +220,6 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
                                     "currency": "KES",
                                     "transaction_status": "Completed",
                                     "is_active": True,
-                                    "reference": f"{prefix}-{index:04d}-{stype.replace(' ', '')}",
                                 }
                                 deposits_data.append(deposit_data)
                             except ValueError as e:
@@ -215,15 +240,14 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
                             deposit = deposit_serializer.save(deposited_by=admin)
                             success_count += 1
                             account_owner = deposit.savings_account.member
-                            if account_owner.email:
-                                send_deposit_made_email(account_owner, deposit)
+                            
                         else:
                             error_count += 1
                             errors.append(
                                 {
                                     "row": index,
                                     "account": deposit_data["savings_account"],
-                                    "errors": deposit_serializer.errors,
+                                    "error": str(deposit_serializer.errors),
                                 }
                             )
 
@@ -232,9 +256,16 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
                     errors.append({"row": index, "error": str(e)})
 
             # Update log
-            log.success_count = success_count
-            log.error_count = error_count
-            log.save()
+            try:
+                log.success_count = success_count
+                log.error_count = error_count
+                log.save()
+            except Exception as e:
+                logger.error(f"Failed to update BulkTransactionLog: {str(e)}")
+                return Response(
+                    {"error": "Failed to update transaction log"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
         # Return response
         response_data = {
@@ -244,11 +275,18 @@ class BulkSavingsDepositUploadView(generics.CreateAPIView):
             "log_reference": log.reference_prefix,
             "cloudinary_url": log.cloudinary_url,
         }
-        return Response(
-            response_data,
-            status=(
-                status.HTTP_201_CREATED
-                if success_count > 0
-                else status.HTTP_400_BAD_REQUEST
-            ),
-        )
+        try:
+            return Response(
+                response_data,
+                status=(
+                    status.HTTP_201_CREATED
+                    if success_count > 0
+                    else status.HTTP_400_BAD_REQUEST
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Failed to return response: {str(e)}")
+            return Response(
+                {"error": "Internal server error"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
