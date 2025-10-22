@@ -17,6 +17,7 @@ from venturepayments.utils import (
 )
 
 from transactions.models import BulkTransactionLog
+from venturetypes.models import VentureType
 
 logger = logging.getLogger(__name__)
 
@@ -65,18 +66,30 @@ class VenturePaymentBulkUploadView(generics.CreateAPIView):
             csv_content = file.read().decode("utf-8")
             csv_file = io.StringIO(csv_content)
             reader = csv.DictReader(csv_file)
-            required_columns = ["Venture Account", "Amount"]
-            if not all(col in reader.fieldnames for col in required_columns):
-                return Response(
-                    {
-                        "error": "CSV must include 'Venture Account' and 'Amount' columns."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
         except Exception as e:
             logger.error(f"Failed to read CSV: {str(e)}")
             return Response(
                 {"error": f"Invalid CSV file: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get venture types
+        venture_types = VentureType.objects.values_list("name", flat=True)
+        if not venture_types:
+            return Response(
+                {"error": "No venture types defined."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate CSV columns
+        account_columns = [f"{vt} Account" for vt in venture_types]
+        payment_columns = [f"{vt} Payment Amount" for vt in venture_types]
+        required_columns = account_columns + payment_columns
+        if not any(col in reader.fieldnames for col in required_columns):
+            return Response(
+                {
+                    "error": f"CSV must include at least one venture type column pair (e.g., 'Venture A Account', 'Venture A Payment Amount')."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -126,41 +139,52 @@ class VenturePaymentBulkUploadView(generics.CreateAPIView):
 
         with transaction.atomic():
             for index, row in enumerate(reader, 1):
-                try:
-                    amount = float(row["Amount"])
-                    if amount < Decimal("0.01"):
-                        raise ValueError("Amount must be greater than 0")
-                    payment_data = {
-                        "venture_account": row["Venture Account"],
-                        "amount": amount,
-                        "payment_method": row.get("Payment Method", "Cash"),
-                        "payment_type": row.get(
-                            "Payment Type", "Individual Settlement"
-                        ),
-                        "transaction_status": "Completed",
-                    }
-                    serializer = VenturePaymentSerializer(data=payment_data)
-                    if serializer.is_valid():
-                        serializer.save(paid_by=admin)
-                        success_count += 1
-                    else:
-                        error_count += 1
-                        errors.append(
-                            {
-                                "row": index,
-                                "account": row["Venture Account"],
-                                "error": str(serializer.errors),
+                for venture_type in venture_types:
+                    account_col = f"{venture_type} Account"
+                    payment_col = f"{venture_type} Payment Amount"
+                    if (
+                        account_col in row
+                        and payment_col in row
+                        and row[account_col]
+                        and row[payment_col]
+                    ):
+                        try:
+                            amount = float(row[payment_col])
+                            if amount < Decimal("0.01"):
+                                raise ValueError(
+                                    f"{payment_col} must be greater than 0"
+                                )
+                            payment_data = {
+                                "venture_account": row[account_col],
+                                "amount": amount,
+                                "payment_method": row.get("Payment Method", "Cash"),
+                                "payment_type": row.get(
+                                    "Payment Type", "Individual Settlement"
+                                ),
+                                "transaction_status": "Completed",
                             }
-                        )
-                except Exception as e:
-                    error_count += 1
-                    errors.append(
-                        {
-                            "row": index,
-                            "account": row.get("Venture Account", "N/A"),
-                            "error": str(e),
-                        }
-                    )
+                            serializer = VenturePaymentSerializer(data=payment_data)
+                            if serializer.is_valid():
+                                serializer.save(paid_by=admin)
+                                success_count += 1
+                            else:
+                                error_count += 1
+                                errors.append(
+                                    {
+                                        "row": index,
+                                        "account": row[account_col],
+                                        "error": str(serializer.errors),
+                                    }
+                                )
+                        except Exception as e:
+                            error_count += 1
+                            errors.append(
+                                {
+                                    "row": index,
+                                    "account": row.get(account_col, "N/A"),
+                                    "error": str(e),
+                                }
+                            )
 
             # Update log
             try:

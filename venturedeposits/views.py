@@ -16,6 +16,7 @@ import io
 import cloudinary.uploader
 import logging
 from decimal import Decimal
+from venturetypes.models import VentureType
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class VentureDepositDetailView(generics.RetrieveAPIView):
 class VentureDepositBulkUploadView(generics.CreateAPIView):
     """Upload CSV file for bulk venture deposits."""
 
-    permission_classes = [IsSystemAdminOrReadOnly,]
+    permission_classes = [IsSystemAdminOrReadOnly]
     serializer_class = VentureDepositSerializer
 
     def post(self, request, *args, **kwargs):
@@ -59,18 +60,30 @@ class VentureDepositBulkUploadView(generics.CreateAPIView):
             csv_content = file.read().decode("utf-8")
             csv_file = io.StringIO(csv_content)
             reader = csv.DictReader(csv_file)
-            required_columns = ["Venture Account", "Amount"]
-            if not all(col in reader.fieldnames for col in required_columns):
-                return Response(
-                    {
-                        "error": "CSV must include 'Venture Account' and 'Amount' columns."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
         except Exception as e:
             logger.error(f"Failed to read CSV: {str(e)}")
             return Response(
                 {"error": f"Invalid CSV file: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Get venture types
+        venture_types = VentureType.objects.values_list("name", flat=True)
+        if not venture_types:
+            return Response(
+                {"error": "No venture types defined."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Validate CSV columns
+        account_columns = [f"{vt} Account" for vt in venture_types]
+        amount_columns = [f"{vt} Amount" for vt in venture_types]
+        required_columns = account_columns + amount_columns
+        if not any(col in reader.fieldnames for col in required_columns):
+            return Response(
+                {
+                    "error": f"CSV must include at least one venture type column pair (e.g., 'Venture A Account', 'Venture A Amount')."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -120,38 +133,46 @@ class VentureDepositBulkUploadView(generics.CreateAPIView):
 
         with transaction.atomic():
             for index, row in enumerate(reader, 1):
-                try:
-                    amount = float(row["Amount"])
-                    if amount < Decimal("0.01"):
-                        raise ValueError("Amount must be greater than 0")
-                    deposit_data = {
-                        "venture_account": row["Venture Account"],
-                        "amount": amount,
-                        "payment_method": row.get("Payment Method", "Cash"),
-                    }
-                    serializer = VentureDepositSerializer(data=deposit_data)
-                    if serializer.is_valid():
-                        deposit = serializer.save(deposited_by=admin)
-                        success_count += 1
-                        account_owner = deposit.venture_account.member
-                    else:
-                        error_count += 1
-                        errors.append(
-                            {
-                                "row": index,
-                                "account": row["Venture Account"],
-                                "error": str(serializer.errors),
+                for venture_type in venture_types:
+                    account_col = f"{venture_type} Account"
+                    amount_col = f"{venture_type} Amount"
+                    if (
+                        account_col in row
+                        and amount_col in row
+                        and row[account_col]
+                        and row[amount_col]
+                    ):
+                        try:
+                            amount = float(row[amount_col])
+                            if amount < Decimal("0.01"):
+                                raise ValueError(f"{amount_col} must be greater than 0")
+                            deposit_data = {
+                                "venture_account": row[account_col],
+                                "amount": amount,
+                                "payment_method": row.get("Payment Method", "Cash"),
                             }
-                        )
-                except Exception as e:
-                    error_count += 1
-                    errors.append(
-                        {
-                            "row": index,
-                            "account": row.get("Venture Account", "N/A"),
-                            "error": str(e),
-                        }
-                    )
+                            serializer = VentureDepositSerializer(data=deposit_data)
+                            if serializer.is_valid():
+                                deposit = serializer.save(deposited_by=admin)
+                                success_count += 1
+                            else:
+                                error_count += 1
+                                errors.append(
+                                    {
+                                        "row": index,
+                                        "account": row[account_col],
+                                        "error": str(serializer.errors),
+                                    }
+                                )
+                        except Exception as e:
+                            error_count += 1
+                            errors.append(
+                                {
+                                    "row": index,
+                                    "account": row.get(account_col, "N/A"),
+                                    "error": str(e),
+                                }
+                            )
 
             # Update log
             try:
