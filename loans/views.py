@@ -42,4 +42,6 @@ class LoanAccountDetailView(generics.RetrieveAPIView):
     lookup_field = "identity"
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
+        return self.queryset.filter(user=self.request.user).prefetch_related(
+            "repayments"
+        )

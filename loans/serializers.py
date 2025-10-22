@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 
 from loans.models import LoanAccount
 from loantypes.models import LoanType
+from loanrepayments.serializers import LoanRepaymentSerializer
 
 User = get_user_model()
 
@@ -16,6 +17,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     approved_by = serializers.CharField(
         source="approved_by.member_no", read_only=True, required=False
     )
+    repayments = LoanRepaymentSerializer(many=True, read_only=True)
 
     class Meta:
         model = LoanAccount
@@ -36,6 +38,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             "reference",
             "created_at",
             "updated_at",
+            "repayments",
         ]
 
     def create(self, validated_data):
