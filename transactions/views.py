@@ -27,6 +27,19 @@ class AccountListView(generics.ListAPIView):
         )
 
 
+class AccountDetailView(generics.RetrieveAPIView):
+    serializer_class = AccountSerializer
+    permission_classes = (IsAuthenticated,)
+    lookup_field = "member_no"
+
+    def get_queryset(self):
+        return (
+            User.objects.all()
+            .filter(is_member=True)
+            .prefetch_related("savings_accounts", "venture_accounts")
+        )
+
+
 class AccountListDownloadView(generics.ListAPIView):
     serializer_class = AccountSerializer
     permission_classes = (IsAuthenticated,)
