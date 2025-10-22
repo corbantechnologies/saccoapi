@@ -39,3 +39,7 @@ class VenturePaymentSerializer(serializers.ModelSerializer):
                     {"amount": "Payment amount exceeds venture account balance."}
                 )
         return super().validate(attrs)
+
+
+class BulkVenturePaymentSerializer(serializers.Serializer):
+    payments = VenturePaymentSerializer(many=True)
