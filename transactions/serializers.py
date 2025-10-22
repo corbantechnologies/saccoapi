@@ -10,13 +10,13 @@ User = get_user_model()
 class AccountSerializer(serializers.ModelSerializer):
     savings_accounts = serializers.SerializerMethodField()
     venture_accounts = serializers.SerializerMethodField()
+    member_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = (
             "member_no",
-            "first_name",
-            "last_name",
+            "member_name",
             "savings_accounts",
             "venture_accounts",
         )
@@ -36,3 +36,6 @@ class AccountSerializer(serializers.ModelSerializer):
             .values_list("account_number", "venture_type__name", "balance")
             .all()
         )
+
+    def get_member_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}"
