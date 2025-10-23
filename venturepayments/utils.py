@@ -23,7 +23,7 @@ def send_venture_payment_confirmation_email(member, venture_payment):
             },
         )
         params = {
-            "from": "Tamarind SACCO <finance@wananchimali.com>",
+            "from": "SACCO <finance@wananchimali.com>",
             "to": [member.email],
             "subject": "Payment Confirmation",
             "html": email_body,
@@ -48,7 +48,7 @@ def send_venture_payment_update_email(member, venture_payment):
             },
         )
         params = {
-            "from": "Tamarind SACCO <finance@wananchimali.com>",
+            "from": "SACCO <finance@wananchimali.com>",
             "to": [member.email],
             "subject": "Venture Payment Update",
             "html": email_body,
