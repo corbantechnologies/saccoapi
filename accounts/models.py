@@ -33,7 +33,7 @@ class UserManager(BaseUserManager):
 
         return self._create_user(password, **extra_fields)
 
-    def create_superuser(self, email, password, **extra_fields):
+    def create_superuser(self, password, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_approved", True)
@@ -45,7 +45,7 @@ class UserManager(BaseUserManager):
         if extra_fields.get("is_approved") is not True:
             raise ValueError("Superuser must have is_approved=True.")
 
-        return self._create_user(email, password, **extra_fields)
+        return self._create_user(password, **extra_fields)
 
 
 class User(
