@@ -23,7 +23,7 @@ def generate_reference():
 def generate_member_number():
     year = datetime.now().year % 100  # Last two digits of year
     random_number = "".join(secrets.choice(string.digits) for _ in range(6))
-    return f"MBR{year}{random_number}"
+    return f"MB{year}{random_number}"
 
 
 def send_registration_confirmation_email(user):

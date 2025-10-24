@@ -1,6 +1,10 @@
 from django.urls import path
 
-from loanrepayments.views import LoanRepaymentListCreateView, LoanRepaymentDetailView
+from loanrepayments.views import (
+    LoanRepaymentListCreateView,
+    LoanRepaymentDetailView,
+    LoanRepaymentBulkUploadView,
+)
 
 app_name = "loanrepayments"
 
@@ -10,5 +14,10 @@ urlpatterns = [
         "<str:reference>/",
         LoanRepaymentDetailView.as_view(),
         name="loanrepayment-detail",
+    ),
+    path(
+        "bulk/upload/",
+        LoanRepaymentBulkUploadView.as_view(),
+        name="loanrepayment-bulk-upload",
     ),
 ]

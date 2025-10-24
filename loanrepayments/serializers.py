@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from loanrepayments.models import LoanRepayment
 from loans.models import LoanAccount
+from decimal import Decimal
 
 
 class LoanRepaymentSerializer(serializers.ModelSerializer):
@@ -11,6 +12,9 @@ class LoanRepaymentSerializer(serializers.ModelSerializer):
     paid_by = serializers.CharField(source="paid_by.member_no", read_only=True)
     transaction_status = serializers.ChoiceField(
         choices=LoanRepayment.TRANSACTION_STATUS_CHOICES, default="Completed"
+    )
+    amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.01")
     )
 
     class Meta:
@@ -28,3 +32,7 @@ class LoanRepaymentSerializer(serializers.ModelSerializer):
             "updated_at",
             "reference",
         ]
+
+
+class BulkLoanRepaymentSerializer(serializers.Serializer):
+    repayments = LoanRepaymentSerializer(many=True)
