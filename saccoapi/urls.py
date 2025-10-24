@@ -33,4 +33,5 @@ urlpatterns = [
     path("api/v1/venturedeposits/", include("venturedeposits.urls")),
     path("api/v1/venturepayments/", include("venturepayments.urls")),
     path("api/v1/transactions/", include("transactions.urls")),
+    path("api/v1/tamarindloaninterests/", include("loanintereststamarind.urls")),
 ]
