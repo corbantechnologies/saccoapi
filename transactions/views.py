@@ -1,3 +1,11 @@
+import csv
+import io
+import cloudinary.uploader
+import logging
+from datetime import date
+from django.db import transaction
+from decimal import Decimal
+from rest_framework.response import Response
 from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
@@ -5,21 +13,15 @@ from django.http import StreamingHttpResponse
 from savings.models import SavingsType
 from ventures.models import VentureType
 from transactions.serializers import AccountSerializer
-import csv
-import io
 from datetime import datetime
-import cloudinary.uploader
-import logging
 
 from transactions.models import DownloadLog, BulkTransactionLog
 from savings.serializers import SavingsDepositSerializer
 from venturepayments.serializers import VenturePaymentSerializer
 from venturedeposits.serializers import VentureDepositSerializer
 from accounts.permissions import IsSystemAdminOrReadOnly
-from datetime import date
-from django.db import transaction
-from decimal import Decimal
-from rest_framework.response import Response
+from loantypes.models import LoanType
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,13 +61,14 @@ class AccountListDownloadView(generics.ListAPIView):
         return (
             User.objects.all()
             .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts")
+            .prefetch_related("savings_accounts", "venture_accounts", "loans")
         )
 
     def get(self, request, *args, **kwargs):
-        # get all savings and venture types
-        savings_types = SavingsType.objects.all().values_list("name", flat=True)
-        venture_types = VentureType.objects.all().values_list("name", flat=True)
+        # Get savings, venture, and loan types
+        savings_types = SavingsType.objects.values_list("name", flat=True)
+        venture_types = VentureType.objects.values_list("name", flat=True)
+        loan_types = LoanType.objects.values_list("name", flat=True)
 
         # Define CSV headers
         headers = ["Member Number", "Member Name"]
@@ -73,30 +76,38 @@ class AccountListDownloadView(generics.ListAPIView):
             headers.extend([f"{stype} Account", f"{stype} Balance"])
         for vtype in venture_types:
             headers.extend([f"{vtype} Account", f"{vtype} Balance"])
+        for ltype in loan_types:
+            headers.extend(
+                [f"{ltype} Account", f"{ltype} Balance", f"{ltype} Interest"]
+            )
 
         # CSV Buffer
         buffer = io.StringIO()
         writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
         writer.writeheader()
 
-        # serialize data
+        # Serialize data
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-        data = serializer.data
+        data = serializer.data  # Directly use serializer.data (ReturnList)
 
-        # write rows
+        # Write rows
         for user in data:
             row = {
                 "Member Number": user["member_no"],
                 "Member Name": user["member_name"],
             }
-            # Initialize all account/balance fields as empty
+            # Initialize all fields as empty
             for stype in savings_types:
                 row[f"{stype} Account"] = ""
                 row[f"{stype} Balance"] = ""
             for vtype in venture_types:
                 row[f"{vtype} Account"] = ""
                 row[f"{vtype} Balance"] = ""
+            for ltype in loan_types:
+                row[f"{ltype} Account"] = ""
+                row[f"{ltype} Balance"] = ""
+                row[f"{ltype} Interest"] = ""
 
             # Populate savings accounts
             for acc_no, acc_type, balance in user["savings_accounts"]:
@@ -108,30 +119,56 @@ class AccountListDownloadView(generics.ListAPIView):
                 row[f"{acc_type} Account"] = acc_no
                 row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
+            # Populate loan accounts
+            for acc_no, acc_type, outstanding_balance, _ in user["loan_accounts"]:
+                row[f"{acc_type} Account"] = acc_no
+                row[f"{acc_type} Balance"] = f"{outstanding_balance:.2f}"
+
+            # Populate loan interest
+            for amount, acc_no in user["loan_interest"]:
+                for acc in user["loan_accounts"]:
+                    if acc[0] == acc_no:
+                        loan_type = acc[1]
+                        row[f"{loan_type} Interest"] = f"{amount:.2f}"
+                        break
+
             writer.writerow(row)
 
-        # upload to cloudinary
+        # Upload to Cloudinary
         buffer.seek(0)
         file_name = f"account_list_{datetime.now().strftime('%Y%m%d')}.csv"
-        upload_result = cloudinary.uploader.upload(
-            buffer,
-            resource_type="raw",
-            public_id=f"account_lists/{file_name}",
-            format="csv",
-        )
+        try:
+            upload_result = cloudinary.uploader.upload(
+                buffer,
+                resource_type="raw",
+                public_id=f"account_lists/{file_name}",
+                format="csv",
+            )
+        except Exception as e:
+            logger.error(f"Cloudinary upload failed: {str(e)}")
+            return Response(
+                {"error": "Failed to upload file to storage"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
-        # log the download
-        DownloadLog.objects.create(
-            admin=request.user,
-            file_name=file_name,
-            cloudinary_url=upload_result["secure_url"],
-        )
+        # Log the download
+        try:
+            DownloadLog.objects.create(
+                admin=request.user,
+                file_name=file_name,
+                cloudinary_url=upload_result["secure_url"],
+            )
+        except Exception as e:
+            logger.error(f"Failed to create DownloadLog: {str(e)}")
+            return Response(
+                {"error": "Failed to log download"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         # Prepare response
         buffer.seek(0)
         response = StreamingHttpResponse(buffer, content_type="text/csv")
         response["Content-Disposition"] = f"attachment; filename={file_name}"
-
         return response
 
 
