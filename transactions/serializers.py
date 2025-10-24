@@ -60,7 +60,11 @@ class AccountSerializer(serializers.ModelSerializer):
 
         return (
             TamarindLoanInterest.objects.filter(loan_account__user=obj)
-            .values_list("amount", "loan_account__account_number")
+            .values_list(
+                "amount",
+                "loan_account__account_number",
+                "loan_account__outstanding_balance",
+            )
             .all()
         )
 

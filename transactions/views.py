@@ -65,83 +65,105 @@ class AccountListDownloadView(generics.ListAPIView):
         )
 
     def get(self, request, *args, **kwargs):
+        interest_only = (
+            request.query_params.get("interest_only", "false").lower() == "true"
+        )
+
         # Get savings, venture, and loan types
         savings_types = SavingsType.objects.values_list("name", flat=True)
         venture_types = VentureType.objects.values_list("name", flat=True)
         loan_types = LoanType.objects.values_list("name", flat=True)
-
-        # Define CSV headers
-        headers = ["Member Number", "Member Name"]
-        for stype in savings_types:
-            headers.extend([f"{stype} Account", f"{stype} Balance"])
-        for vtype in venture_types:
-            headers.extend([f"{vtype} Account", f"{vtype} Balance"])
-        for ltype in loan_types:
-            headers.extend(
-                [f"{ltype} Account", f"{ltype} Balance", f"{ltype} Interest"]
-            )
-
-        # CSV Buffer
-        buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
-        writer.writeheader()
 
         # Serialize data
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         data = serializer.data  # Directly use serializer.data (ReturnList)
 
-        # Write rows
-        for user in data:
-            row = {
-                "Member Number": user["member_no"],
-                "Member Name": user["member_name"],
-            }
-            # Initialize all fields as empty
+        if interest_only:
+            # Interest-only CSV
+            headers = [
+                "Member Number",
+                "Member Name",
+                "Loan Account",
+                "Loan Type",
+                "Interest Amount",
+            ]
+            buffer = io.StringIO()
+            writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
+            writer.writeheader()
+
+            for user in data:
+                for amount, acc_no in user["loan_interest"]:
+                    loan_type = ""
+                    for acc in user["loan_accounts"]:
+                        if acc[0] == acc_no:
+                            loan_type = acc[1]
+                            break
+                    if loan_type:
+                        row = {
+                            "Member Number": user["member_no"],
+                            "Member Name": user["member_name"],
+                            "Loan Account": acc_no,
+                            "Loan Type": loan_type,
+                            "Interest Amount": f"{amount:.2f}",
+                        }
+                        writer.writerow(row)
+
+            file_name = f"interest_transactions_{datetime.now().strftime('%Y%m%d')}.csv"
+            cloudinary_path = f"interest_transactions/{file_name}"
+        else:
+            # Main account list CSV
+            headers = ["Member Number", "Member Name"]
             for stype in savings_types:
-                row[f"{stype} Account"] = ""
-                row[f"{stype} Balance"] = ""
+                headers.extend([f"{stype} Account", f"{stype} Balance"])
             for vtype in venture_types:
-                row[f"{vtype} Account"] = ""
-                row[f"{vtype} Balance"] = ""
+                headers.extend([f"{vtype} Account", f"{vtype} Balance"])
             for ltype in loan_types:
-                row[f"{ltype} Account"] = ""
-                row[f"{ltype} Balance"] = ""
-                row[f"{ltype} Interest"] = ""
+                headers.extend([f"{ltype} Account", f"{ltype} Balance"])
 
-            # Populate savings accounts
-            for acc_no, acc_type, balance in user["savings_accounts"]:
-                row[f"{acc_type} Account"] = acc_no
-                row[f"{acc_type} Balance"] = f"{balance:.2f}"
+            buffer = io.StringIO()
+            writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
+            writer.writeheader()
 
-            # Populate venture accounts
-            for acc_no, acc_type, balance in user["venture_accounts"]:
-                row[f"{acc_type} Account"] = acc_no
-                row[f"{acc_type} Balance"] = f"{balance:.2f}"
+            for user in data:
+                row = {
+                    "Member Number": user["member_no"],
+                    "Member Name": user["member_name"],
+                }
+                for stype in savings_types:
+                    row[f"{stype} Account"] = ""
+                    row[f"{stype} Balance"] = ""
+                for vtype in venture_types:
+                    row[f"{vtype} Account"] = ""
+                    row[f"{vtype} Balance"] = ""
+                for ltype in loan_types:
+                    row[f"{ltype} Account"] = ""
+                    row[f"{ltype} Balance"] = ""
 
-            # Populate loan accounts
-            for acc_no, acc_type, outstanding_balance, _ in user["loan_accounts"]:
-                row[f"{acc_type} Account"] = acc_no
-                row[f"{acc_type} Balance"] = f"{outstanding_balance:.2f}"
+                for acc_no, acc_type, balance in user["savings_accounts"]:
+                    row[f"{acc_type} Account"] = acc_no
+                    row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
-            # Populate loan interest
-            for amount, acc_no in user["loan_interest"]:
-                for acc in user["loan_accounts"]:
-                    if acc[0] == acc_no:
-                        loan_type = acc[1]
-                        row[f"{loan_type} Interest"] = f"{amount:.2f}"
-                        break
+                for acc_no, acc_type, balance in user["venture_accounts"]:
+                    row[f"{acc_type} Account"] = acc_no
+                    row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
-            writer.writerow(row)
+                for acc_no, acc_type, outstanding_balance, _ in user["loan_accounts"]:
+                    row[f"{acc_type} Account"] = acc_no
+                    row[f"{acc_type} Balance"] = f"{outstanding_balance:.2f}"
+
+                writer.writerow(row)
+
+            file_name = f"account_list_{datetime.now().strftime('%Y%m%d')}.csv"
+            cloudinary_path = f"account_lists/{file_name}"
 
         # Upload to Cloudinary
         buffer.seek(0)
-        file_name = f"account_list_{datetime.now().strftime('%Y%m%d')}.csv"
         try:
             upload_result = cloudinary.uploader.upload(
                 buffer,
                 resource_type="raw",
-                public_id=f"account_lists/{file_name}",
+                public_id=cloudinary_path,
                 format="csv",
             )
         except Exception as e:
