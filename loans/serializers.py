@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from loans.models import LoanAccount
 from loantypes.models import LoanType
 from loanrepayments.serializers import LoanRepaymentSerializer
+from loanintereststamarind.serializers import TamarindLoanInterestSerializer
 
 User = get_user_model()
 
@@ -18,6 +19,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
         source="approved_by.member_no", read_only=True, required=False
     )
     repayments = LoanRepaymentSerializer(many=True, read_only=True)
+    loan_interests = TamarindLoanInterestSerializer(many=True, read_only=True)
 
     class Meta:
         model = LoanAccount
@@ -39,6 +41,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "repayments",
+            "loan_interests",
         ]
 
     def create(self, validated_data):

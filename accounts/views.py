@@ -8,7 +8,6 @@ from rest_framework.authtoken.models import Token
 from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.db import transaction
 
 from accounts.serializers import (
     BaseUserSerializer,
@@ -29,6 +28,8 @@ from accounts.utils import (
 )
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
+from venturetypes.models import VentureType
+from ventures.models import VentureAccount
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,21 @@ class ApproveMemberView(generics.RetrieveUpdateAPIView):
             f"Created {len(created_accounts)} SavingsAccounts for {instance.member_no}: {', '.join(created_accounts)}"
         )
 
+        # Create VentureAccount for each VentureType
+        venture_types = VentureType.objects.all()
+        created_accounts = []
+        for venture_type in venture_types:
+            if not VentureAccount.objects.filter(
+                member=instance, venture_type=venture_type
+            ).exists():
+                account = VentureAccount.objects.create(
+                    member=instance, venture_type=venture_type, is_active=True
+                )
+                created_accounts.append(str(account))
+        logger.info(
+            f"Created {len(created_accounts)} VentureAccounts for {instance.member_no}: {', '.join(created_accounts)}"
+        )
+
         # Send member number email
         try:
             send_member_number_email(user=instance)
@@ -281,6 +297,7 @@ class MemberCreatedByAdminView(generics.CreateAPIView):
     def perform_create(self, serializer):
         user = serializer.save()
 
+        # Existing savings account creation
         savings_types = SavingsType.objects.all()
         created_accounts = []
         for savings_type in savings_types:
@@ -293,6 +310,20 @@ class MemberCreatedByAdminView(generics.CreateAPIView):
                 created_accounts.append(str(account))
         logger.info(
             f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
+        )
+        # Existing venture account creation
+        venture_types = VentureType.objects.all()
+        created_accounts = []
+        for venture_type in venture_types:
+            if not VentureAccount.objects.filter(
+                member=user, venture_type=venture_type
+            ).exists():
+                account = VentureAccount.objects.create(
+                    member=user, venture_type=venture_type, is_active=True
+                )
+                created_accounts.append(str(account))
+        logger.info(
+            f"Created {len(created_accounts)} VentureAccounts for {user.member_no}: {', '.join(created_accounts)}"
         )
 
 
@@ -318,6 +349,21 @@ class BulkMemberCreatedByAdminView(APIView):
                         created_accounts.append(str(account))
                 logger.info(
                     f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
+                )
+
+                # Your existing venture account creation logic
+                venture_types = VentureType.objects.all()
+                created_accounts = []
+                for venture_type in venture_types:
+                    if not VentureAccount.objects.filter(
+                        member=user, venture_type=venture_type
+                    ).exists():
+                        account = VentureAccount.objects.create(
+                            member=user, venture_type=venture_type, is_active=True
+                        )
+                        created_accounts.append(str(account))
+                logger.info(
+                    f"Created {len(created_accounts)} VentureAccounts for {user.member_no}: {', '.join(created_accounts)}"
                 )
 
             # FIXED: Use MemberCreatedByAdminSerializer for response (handles User instances)

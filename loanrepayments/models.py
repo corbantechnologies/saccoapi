@@ -53,7 +53,7 @@ class LoanRepayment(TimeStampedModel, UniversalIdModel, ReferenceModel):
         decimal_places=2,
         validators=[MinValueValidator(0.01, message="Amount must be greater than 0")],
     )
-    payment_method = models.CharField(max_length=100, choices=PAYMENT_METHOD_CHOICES)
+    payment_method = models.CharField(max_length=100, choices=PAYMENT_METHOD_CHOICES, default="Cash")
     repayment_type = models.CharField(
         max_length=100, choices=REPAYMENT_TYPE_CHOICES, default="Regular Repayment"
     )

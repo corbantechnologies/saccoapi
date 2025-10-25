@@ -1,48 +1,47 @@
-from rest_framework import generics, status
 import io
 import csv
 import logging
 from decimal import Decimal
 from datetime import date
 from django.db import transaction
+from rest_framework import generics, status
 from rest_framework.response import Response
 import cloudinary.uploader
 
-from accounts.permissions import IsSystemAdminOrReadOnly
-from loanrepayments.models import LoanRepayment
-from loanrepayments.serializers import LoanRepaymentSerializer
+from loanintereststamarind.models import TamarindLoanInterest
+from loanintereststamarind.serializers import (
+    TamarindLoanInterestSerializer,
+    BulkTamarindLoanInterestSerializer,
+)
 from transactions.models import BulkTransactionLog
-from loans.models import LoanAccount
+from accounts.permissions import IsSystemAdminOrReadOnly
 from loantypes.models import LoanType
+from loans.models import LoanAccount
 
 logger = logging.getLogger(__name__)
 
 
-class LoanRepaymentListCreateView(generics.ListCreateAPIView):
-    queryset = LoanRepayment.objects.all()
-    serializer_class = LoanRepaymentSerializer
-    permission_classes = [
-        IsSystemAdminOrReadOnly,
-    ]
+class TamarindLoanInterestListCreateView(generics.ListCreateAPIView):
+    queryset = TamarindLoanInterest.objects.all()
+    serializer_class = TamarindLoanInterestSerializer
+    permission_classes = (IsSystemAdminOrReadOnly,)
 
     def perform_create(self, serializer):
-        serializer.save(paid_by=self.request.user)
+        serializer.save(entered_by=self.request.user)
 
 
-class LoanRepaymentDetailView(generics.RetrieveAPIView):
-    queryset = LoanRepayment.objects.all()
-    serializer_class = LoanRepaymentSerializer
-    permission_classes = [
-        IsSystemAdminOrReadOnly,
-    ]
+class TamarindLoanInterestDetailView(generics.RetrieveAPIView):
+    queryset = TamarindLoanInterest.objects.all()
+    serializer_class = TamarindLoanInterestSerializer
+    permission_classes = (IsSystemAdminOrReadOnly,)
     lookup_field = "reference"
 
 
-class LoanRepaymentBulkUploadView(generics.CreateAPIView):
-    """Upload CSV file for bulk loan repayments."""
+class TamarindLoanInterestBulkUploadView(generics.CreateAPIView):
+    """Upload CSV file for bulk loan interest entries."""
 
     permission_classes = [IsSystemAdminOrReadOnly]
-    serializer_class = LoanRepaymentSerializer
+    serializer_class = TamarindLoanInterestSerializer
 
     def post(self, request, *args, **kwargs):
         file = request.FILES.get("file")
@@ -64,22 +63,24 @@ class LoanRepaymentBulkUploadView(generics.CreateAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Get loan types
-        loan_types = LoanType.objects.values_list("name", flat=True)
+        # Get loan types with manual interest
+        loan_types = LoanType.objects.filter(
+            system_calculates_interest=False
+        ).values_list("name", flat=True)
         if not loan_types:
             return Response(
-                {"error": "No loan types defined."},
+                {"error": "No loan types with manual interest calculation defined."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Validate CSV columns
         account_columns = [f"{lt} Account" for lt in loan_types]
-        repayment_columns = [f"{lt} Repayment Amount" for lt in loan_types]
-        required_columns = account_columns + repayment_columns
+        interest_columns = [f"{lt} Interest Amount" for lt in loan_types]
+        required_columns = account_columns + interest_columns
         if not any(col in reader.fieldnames for col in required_columns):
             return Response(
                 {
-                    "error": f"CSV must include at least one loan type column pair (e.g., 'Personal Loan Account', 'Personal Loan Repayment Amount')."
+                    "error": f"CSV must include at least one loan type column pair (e.g., 'Personal Loan Account', 'Personal Loan Interest Amount')."
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -87,13 +88,13 @@ class LoanRepaymentBulkUploadView(generics.CreateAPIView):
         admin = request.user
         today = date.today()
         date_str = today.strftime("%Y%m%d")
-        prefix = f"LOAN-REPAYMENT-BULK-{date_str}"
+        prefix = f"LOAN-INTEREST-BULK-{date_str}"
 
         # Initialize log
         try:
             log = BulkTransactionLog.objects.create(
                 admin=admin,
-                transaction_type="Loan Repayments",
+                transaction_type="Loan Interest Entries",
                 reference_prefix=prefix,
                 success_count=0,
                 error_count=0,
@@ -112,7 +113,7 @@ class LoanRepaymentBulkUploadView(generics.CreateAPIView):
             upload_result = cloudinary.uploader.upload(
                 buffer,
                 resource_type="raw",
-                public_id=f"bulk_loan_repayment/{prefix}_{file.name}",
+                public_id=f"bulk_loan_interest/{prefix}_{file.name}",
                 format="csv",
             )
             log.cloudinary_url = upload_result["secure_url"]
@@ -132,31 +133,33 @@ class LoanRepaymentBulkUploadView(generics.CreateAPIView):
             for index, row in enumerate(reader, 1):
                 for loan_type in loan_types:
                     account_col = f"{loan_type} Account"
-                    repayment_col = f"{loan_type} Repayment Amount"
+                    interest_col = f"{loan_type} Interest Amount"
                     if (
                         account_col in row
-                        and repayment_col in row
+                        and interest_col in row
                         and row[account_col]
-                        and row[repayment_col]
+                        and row[interest_col]
                     ):
                         try:
-                            amount = float(row[repayment_col])
+                            amount = float(row[interest_col])
                             if amount < Decimal("0.01"):
                                 raise ValueError(
-                                    f"{repayment_col} must be greater than 0"
+                                    f"{interest_col} must be greater than 0"
                                 )
-                            repayment_data = {
+                            interest_data = {
                                 "loan_account": row[account_col],
                                 "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                                "repayment_type": row.get(
-                                    "Repayment Type", "Regular Repayment"
-                                ),
-                                "transaction_status": "Completed",
                             }
-                            serializer = LoanRepaymentSerializer(data=repayment_data)
+                            serializer = TamarindLoanInterestSerializer(
+                                data=interest_data
+                            )
                             if serializer.is_valid():
-                                serializer.save(paid_by=admin)
+                                interest = serializer.save(entered_by=admin)
+                                # Update loan account interest accrued
+                                interest.loan_account.interest_accrued += Decimal(
+                                    str(amount)
+                                )
+                                interest.loan_account.save()
                                 success_count += 1
                             else:
                                 error_count += 1
