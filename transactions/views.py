@@ -10,11 +10,11 @@ from rest_framework import generics, status
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.http import StreamingHttpResponse
-from savings.models import SavingsType
-from ventures.models import VentureType
-from transactions.serializers import AccountSerializer
 from datetime import datetime
 
+from savings.models import SavingsType
+from ventures.models import VentureType
+from transactions.serializers import AccountSerializer, MemberTransactionSerializer
 from transactions.models import DownloadLog, BulkTransactionLog
 from savings.serializers import SavingsDepositSerializer
 from venturepayments.serializers import VenturePaymentSerializer
@@ -87,13 +87,14 @@ class AccountListDownloadView(generics.ListAPIView):
                 "Loan Account",
                 "Loan Type",
                 "Interest Amount",
+                "Outstanding Balance",
             ]
             buffer = io.StringIO()
             writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
             writer.writeheader()
 
             for user in data:
-                for amount, acc_no in user["loan_interest"]:
+                for amount, acc_no, outstanding_balance in user["loan_interest"]:
                     loan_type = ""
                     for acc in user["loan_accounts"]:
                         if acc[0] == acc_no:
@@ -106,6 +107,7 @@ class AccountListDownloadView(generics.ListAPIView):
                             "Loan Account": acc_no,
                             "Loan Type": loan_type,
                             "Interest Amount": f"{amount:.2f}",
+                            "Outstanding Balance": f"{outstanding_balance:.2f}",
                         }
                         writer.writerow(row)
 

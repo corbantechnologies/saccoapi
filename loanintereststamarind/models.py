@@ -6,10 +6,15 @@ from loans.models import LoanAccount
 
 User = get_user_model()
 
+
 class TamarindLoanInterest(TimeStampedModel, UniversalIdModel, ReferenceModel):
-    loan_account = models.ForeignKey(LoanAccount, on_delete=models.CASCADE, related_name="tamarind_interests")
+    loan_account = models.ForeignKey(
+        LoanAccount, on_delete=models.CASCADE, related_name="loan_interests"
+    )
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    entered_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    entered_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True
+    )
 
     class Meta:
         verbose_name = "Tamarind Loan Interest"
