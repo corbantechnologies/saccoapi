@@ -23,6 +23,7 @@ from saccoapi.settings import DOMAIN
 from savings.serializers import SavingsAccountSerializer
 from loans.serializers import LoanAccountSerializer
 from ventures.serializers import VentureAccountSerializer
+from nextofkin.serializers import NextOfKinSerializer
 
 User = get_user_model()
 
@@ -46,6 +47,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
     savings_accounts = SavingsAccountSerializer(many=True, read_only=True)
     loans = LoanAccountSerializer(many=True, read_only=True)
     venture_accounts = VentureAccountSerializer(many=True, read_only=True)
+    next_of_kin = NextOfKinSerializer(many=True, read_only=True)
 
     class Meta:
         model = User
@@ -78,6 +80,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "reference",
+            "next_of_kin",
             "savings_accounts",
             "loans",
             "venture_accounts",
