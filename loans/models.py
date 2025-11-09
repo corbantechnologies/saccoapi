@@ -12,7 +12,7 @@ User = get_user_model()
 
 
 class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="loans")
+    member = models.ForeignKey(User, on_delete=models.CASCADE, related_name="loans")
     loan_type = models.ForeignKey(
         LoanType, on_delete=models.PROTECT, related_name="loan_accounts"
     )
@@ -47,7 +47,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.account_number} - {self.user.member_no}"
+        return f"{self.account_number} - {self.member.member_no}"
 
     def calculate_monthly_interest(self):
         """
@@ -73,7 +73,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
 
     def save(self, *args, **kwargs):
         if not self.identity:
-            self.identity = slugify(f"{self.user.member_no}-{self.account_number}")
+            self.identity = slugify(f"{self.member.member_no}-{self.account_number}")
         if self.is_approved and not self.approval_date:
             self.approval_date = timezone.now()
             if not self.outstanding_balance:

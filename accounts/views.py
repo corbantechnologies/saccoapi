@@ -30,6 +30,8 @@ from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
 from venturetypes.models import VentureType
 from ventures.models import VentureAccount
+from loans.models import LoanAccount
+from loantypes.models import LoanType
 
 logger = logging.getLogger(__name__)
 
@@ -90,18 +92,6 @@ class TokenView(APIView):
 """
 Create and Detail Views
 """
-
-
-class MemberCreateView(generics.CreateAPIView):
-    permission_classes = (AllowAny,)
-    serializer_class = MemberSerializer
-    queryset = User.objects.all()
-
-
-class SystemAdminCreateView(generics.CreateAPIView):
-    permission_classes = (AllowAny,)
-    serializer_class = SystemAdminSerializer
-    queryset = User.objects.all()
 
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -220,80 +210,6 @@ class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
 
-class ApproveMemberView(generics.RetrieveUpdateAPIView):
-    """
-    Approve a new member after self registration.
-    Email is compulsory
-    """
-
-    permission_classes = (IsSystemAdmin,)
-    serializer_class = BaseUserSerializer
-    queryset = User.objects.all()
-    lookup_field = "member_no"
-
-    def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-
-        # Validate that user is not already approved
-        if instance.is_approved:
-            return Response(
-                {"detail": "User is already approved."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # Approve user and assign member number
-        instance.is_approved = True
-        instance.is_active = True
-        instance.save()
-
-        # Create SavingsAccount for each SavingsType
-        savings_types = SavingsType.objects.all()
-        created_accounts = []
-        for savings_type in savings_types:
-            if not SavingsAccount.objects.filter(
-                member=instance, account_type=savings_type
-            ).exists():
-                account = SavingsAccount.objects.create(
-                    member=instance, account_type=savings_type, is_active=True
-                )
-                created_accounts.append(str(account))
-        logger.info(
-            f"Created {len(created_accounts)} SavingsAccounts for {instance.member_no}: {', '.join(created_accounts)}"
-        )
-
-        # Create VentureAccount for each VentureType
-        venture_types = VentureType.objects.all()
-        created_accounts = []
-        for venture_type in venture_types:
-            if not VentureAccount.objects.filter(
-                member=instance, venture_type=venture_type
-            ).exists():
-                account = VentureAccount.objects.create(
-                    member=instance, venture_type=venture_type, is_active=True
-                )
-                created_accounts.append(str(account))
-        logger.info(
-            f"Created {len(created_accounts)} VentureAccounts for {instance.member_no}: {', '.join(created_accounts)}"
-        )
-
-        # Send member number email
-        try:
-            send_member_number_email(user=instance)
-        except Exception as e:
-            # Log the error (use your preferred logging mechanism)
-            print(f"Failed to send email to {instance.email}: {str(e)}")
-            return Response(
-                {"detail": "User approved, but failed to send email."},
-                status=status.HTTP_200_OK,
-            )
-
-        serializer = self.get_serializer(instance)
-        return Response(
-            {"detail": "User approved successfully.", "data": serializer.data},
-            status=status.HTTP_200_OK,
-        )
-
-
 class MemberCreatedByAdminView(generics.CreateAPIView):
     permission_classes = (IsSystemAdmin,)
     serializer_class = MemberCreatedByAdminSerializer
@@ -329,6 +245,21 @@ class MemberCreatedByAdminView(generics.CreateAPIView):
                 created_accounts.append(str(account))
         logger.info(
             f"Created {len(created_accounts)} VentureAccounts for {user.member_no}: {', '.join(created_accounts)}"
+        )
+
+        # Existing loan account creation
+        loan_types = LoanType.objects.all()
+        created_accounts = []
+        for loan_type in loan_types:
+            if not LoanAccount.objects.filter(
+                member=user, loan_type=loan_type
+            ).exists():
+                account = LoanAccount.objects.create(
+                    member=user, loan_type=loan_type, is_active=True
+                )
+                created_accounts.append(str(account))
+        logger.info(
+            f"Created {len(created_accounts)} LoanAccounts for {user.member_no}: {', '.join(created_accounts)}"
         )
 
 
@@ -369,6 +300,21 @@ class BulkMemberCreatedByAdminView(APIView):
                         created_accounts.append(str(account))
                 logger.info(
                     f"Created {len(created_accounts)} VentureAccounts for {user.member_no}: {', '.join(created_accounts)}"
+                )
+
+                # Your existing loan account creation logic
+                loan_types = LoanType.objects.all()
+                created_accounts = []
+                for loan_type in loan_types:
+                    if not LoanAccount.objects.filter(
+                        member=user, loan_type=loan_type
+                    ).exists():
+                        account = LoanAccount.objects.create(
+                            member=user, loan_type=loan_type, is_active=True
+                        )
+                        created_accounts.append(str(account))
+                logger.info(
+                    f"Created {len(created_accounts)} LoanAccounts for {user.member_no}: {', '.join(created_accounts)}"
                 )
 
             # FIXED: Use MemberCreatedByAdminSerializer for response (handles User instances)
