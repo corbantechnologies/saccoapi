@@ -115,7 +115,60 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
             super()
             .get_queryset()
             .filter(id=self.request.user.id)
-            .prefetch_related("savings_accounts", "loans")
+            .prefetch_related(
+                "savings_accounts", "loans", "venture_accounts", "next_of_kin"
+            )
+        )
+
+
+"""
+Password Reset
+"""
+
+
+class RequestPasswordResetView(APIView):
+    def post(self, request, *args, **kwargs):
+        serializer = RequestPasswordResetSerializer(data=request.data)
+
+        if serializer.is_valid():
+            verification = serializer.save()
+
+            send_password_reset_email(verification.user, verification.code)
+
+            return Response(
+                {"message": "Password reset email sent successfully!"},
+                status=status.HTTP_200_OK,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetView(APIView):
+    permission_classes = (AllowAny,)
+
+    def post(self, request, *args, **kwargs):
+        serializer = PasswordResetSerializer(data=request.data)
+
+        if serializer.is_valid():
+            serializer.save()
+
+            return Response(
+                {"message": "Password reset successful!"},
+                status=status.HTTP_200_OK,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordChangeView(generics.UpdateAPIView):
+    permission_classes = (IsAuthenticated,)
+    serializer_class = PasswordChangeSerializer
+
+    def get_object(self):
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        return Response(
+            {"detail": "Password changed successfully"}, status=status.HTTP_200_OK
         )
 
 
@@ -123,6 +176,8 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
 System admin views
 - Approve new members
 - View list of members
+- Creating a new member
+- Member activating their accounts
 """
 
 
@@ -140,9 +195,9 @@ class MemberListView(generics.ListAPIView):
         Fetch is_member and is_system_admin field
         Users with is_system_admin are also members
         """
-        return super().get_queryset().filter(
-            is_member=True
-        ) | super().get_queryset().filter(is_system_admin=True)
+        return super().get_queryset().prefetch_related(
+            "savings_accounts", "loans", "venture_accounts", "next_of_kin"
+        ).filter(is_member=True) | super().get_queryset().filter(is_system_admin=True)
 
 
 class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -154,6 +209,15 @@ class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BaseUserSerializer
     queryset = User.objects.all()
     lookup_field = "member_no"
+
+    def get_queryset(self):
+        return (
+            super()
+            .get_queryset()
+            .prefetch_related(
+                "savings_accounts", "loans", "venture_accounts", "next_of_kin"
+            )
+        )
 
 
 class ApproveMemberView(generics.RetrieveUpdateAPIView):
@@ -228,65 +292,6 @@ class ApproveMemberView(generics.RetrieveUpdateAPIView):
             {"detail": "User approved successfully.", "data": serializer.data},
             status=status.HTTP_200_OK,
         )
-
-
-"""
-Password Reset
-"""
-
-
-class RequestPasswordResetView(APIView):
-    def post(self, request, *args, **kwargs):
-        serializer = RequestPasswordResetSerializer(data=request.data)
-
-        if serializer.is_valid():
-            verification = serializer.save()
-
-            send_password_reset_email(verification.user, verification.code)
-
-            return Response(
-                {"message": "Password reset email sent successfully!"},
-                status=status.HTTP_200_OK,
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class PasswordResetView(APIView):
-    permission_classes = (AllowAny,)
-
-    def post(self, request, *args, **kwargs):
-        serializer = PasswordResetSerializer(data=request.data)
-
-        if serializer.is_valid():
-            serializer.save()
-
-            return Response(
-                {"message": "Password reset successful!"},
-                status=status.HTTP_200_OK,
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class PasswordChangeView(generics.UpdateAPIView):
-    permission_classes = (IsAuthenticated,)
-    serializer_class = PasswordChangeSerializer
-
-    def get_object(self):
-        return self.request.user
-
-    def update(self, request, *args, **kwargs):
-        response = super().update(request, *args, **kwargs)
-        return Response(
-            {"detail": "Password changed successfully"}, status=status.HTTP_200_OK
-        )
-
-
-"""
-SACCO Admins:
-- Creating a new member
-- Approving a new member
-- Member activating their accounts
-"""
 
 
 class MemberCreatedByAdminView(generics.CreateAPIView):
