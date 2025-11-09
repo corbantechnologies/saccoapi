@@ -73,7 +73,7 @@ class User(
     tax_pin = models.CharField(max_length=255, blank=True, null=True)
 
     # Contact & Address Details
-    phone = models.CharField(max_length=255, blank=True, null=True)
+    phone = models.CharField(max_length=25, blank=True, null=True)
     county = models.CharField(max_length=255, blank=True, null=True)
 
     # Employment Status
