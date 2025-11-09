@@ -13,7 +13,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     loan_type = serializers.SlugRelatedField(
         slug_field="name", queryset=LoanType.objects.all()
     )
-    user = serializers.CharField(source="user.member_no", read_only=True)
+    member = serializers.CharField(source="member.member_no", read_only=True)
     member_no = serializers.CharField(write_only=True)
     approved_by = serializers.CharField(
         source="approved_by.member_no", read_only=True, required=False
@@ -24,7 +24,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoanAccount
         fields = [
-            "user",
+            "member",
             "member_no",
             "loan_type",
             "account_number",
@@ -52,5 +52,5 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "User with this member number does not exist."
             )
-        validated_data["user"] = user
+        validated_data["member"] = user
         return super().create(validated_data)
