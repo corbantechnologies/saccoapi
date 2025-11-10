@@ -5,6 +5,7 @@ from loans.models import LoanAccount
 from loantypes.models import LoanType
 from loanrepayments.serializers import LoanRepaymentSerializer
 from loanintereststamarind.serializers import TamarindLoanInterestSerializer
+from loandisbursements.serializers import LoanDisbursementSerializer
 
 User = get_user_model()
 
@@ -16,6 +17,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     member = serializers.CharField(source="member.member_no", read_only=True)
     member_no = serializers.CharField(write_only=True)
     repayments = LoanRepaymentSerializer(many=True, read_only=True)
+    loan_disbursements = LoanDisbursementSerializer(many=True, read_only=True)
     loan_interests = TamarindLoanInterestSerializer(many=True, read_only=True)
 
     class Meta:
@@ -33,6 +35,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             "reference",
             "created_at",
             "updated_at",
+            "loan_disbursements",
             "repayments",
             "loan_interests",
         ]
