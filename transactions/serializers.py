@@ -51,7 +51,7 @@ class AccountSerializer(serializers.ModelSerializer):
     def get_loan_accounts(self, obj):
 
         return (
-            LoanAccount.objects.filter(user=obj)
+            LoanAccount.objects.filter(member=obj)
             .values_list(
                 "account_number",
                 "loan_type__name",
@@ -64,7 +64,7 @@ class AccountSerializer(serializers.ModelSerializer):
     def get_loan_interest(self, obj):
 
         return (
-            TamarindLoanInterest.objects.filter(loan_account__user=obj)
+            TamarindLoanInterest.objects.filter(loan_account__member=obj)
             .values_list(
                 "amount",
                 "loan_account__account_number",
@@ -78,7 +78,7 @@ class AccountSerializer(serializers.ModelSerializer):
 
 
 class MemberTransactionSerializer(serializers.Serializer):
-    member_no = serializers.CharField(source="user.member_no", read_only=True)
+    member_no = serializers.CharField(source="member.member_no", read_only=True)
     member_name = serializers.SerializerMethodField()
     account_number = serializers.CharField(read_only=True)
     account_type = serializers.CharField(read_only=True)
@@ -108,7 +108,7 @@ class MemberTransactionSerializer(serializers.Serializer):
         ]
 
     def get_member_name(self, obj):
-        return f"{obj.user.first_name} {obj.user.last_name}"
+        return f"{obj.member.first_name} {obj.member.last_name}"
 
     def to_representation(self, instance):
         # Handle different transaction types
@@ -197,3 +197,26 @@ class MemberTransactionSerializer(serializers.Serializer):
                 "details": "N/A",
             }
         return super().to_representation(instance)
+
+
+class MonthlySummarySerializer(serializers.Serializer):
+    month = serializers.CharField()
+    savings = serializers.DictField(
+        child=serializers.DecimalField(max_digits=12, decimal_places=2)
+    )
+    ventures = serializers.DictField(
+        child=serializers.DecimalField(max_digits=12, decimal_places=2)
+    )
+    loans = serializers.DictField(
+        child=serializers.DecimalField(max_digits=12, decimal_places=2)
+    )
+
+    total_savings = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    total_ventures = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )
+    total_loans = serializers.DecimalField(
+        max_digits=12, decimal_places=2, read_only=True
+    )

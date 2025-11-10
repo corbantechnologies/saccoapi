@@ -5,6 +5,7 @@ from transactions.views import (
     AccountListDownloadView,
     AccountDetailView,
     CombinedBulkUploadView,
+    MemberYearlySummaryView,
 )
 
 app_name = "transactions"
@@ -22,4 +23,5 @@ urlpatterns = [
         CombinedBulkUploadView.as_view(),
         name="combined-bulk-upload",
     ),
+    path("<str:member_no>/summary/", MemberYearlySummaryView.as_view(), name="summary"),
 ]
