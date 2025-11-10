@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Loan Disbursement Confirmation</title>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                background-color: #f4f4f4;
+                font-family: 'Helvetica Neue', Arial, sans-serif;
+                color: #333333;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 20px auto;
+                background-color: #ffffff;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            }
+
+            .header {
+                background: linear-gradient(135deg, #1e40af, #3b82f6);
+                color: white;
+                padding: 30px 20px;
+                text-align: center;
+            }
+
+            .header h1 {
+                margin: 0;
+                font-size: 28px;
+                font-weight: 600;
+            }
+
+            .header p {
+                margin: 8px 0 0;
+                font-size: 16px;
+                opacity: 0.9;
+            }
+
+            .content {
+                padding: 30px 25px;
+            }
+
+            .greeting {
+                font-size: 18px;
+                margin-bottom: 20px;
+                color: #1e40af;
+                font-weight: 500;
+            }
+
+            .details-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-size: 16px;
+            }
+
+            .details-table th {
+                text-align: left;
+                padding: 12px 15px;
+                background-color: #f0f7ff;
+                color: #1e40af;
+                font-weight: 600;
+                border-bottom: 2px solid #3b82f6;
+            }
+
+            .details-table td {
+                padding: 12px 15px;
+                border-bottom: 1px solid #e5e7eb;
+            }
+
+            .amount {
+                font-size: 20px;
+                font-weight: 700;
+                color: #16a34a;
+            }
+
+            .highlight {
+                background-color: #f0fdf4;
+                border-left: 4px solid #16a34a;
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 0 8px 8px 0;
+            }
+
+            .footer {
+                background-color: #1e293b;
+                color: #94a3b8;
+                padding: 25px;
+                text-align: center;
+                font-size: 14px;
+            }
+
+            .footer a {
+                color: #60a5fa;
+                text-decoration: none;
+            }
+
+            .btn {
+                display: inline-block;
+                background-color: #3b82f6;
+                color: white;
+                padding: 12px 28px;
+                border-radius: 8px;
+                text-decoration: none;
+                font-weight: 600;
+                margin: 20px 0;
+                font-size: 16px;
+            }
+
+            .logo {
+                width: 60px;
+                height: 60px;
+                margin-bottom: 15px;
+                border-radius: 50%;
+                background-color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 15px;
+                font-weight: bold;
+                font-size: 24px;
+                color: #1e40af;
+            }
+
+            @media (max-width: 600px) {
+                .container {
+                    margin: 10px;
+                    border-radius: 8px;
+                }
+
+                .header h1 {
+                    font-size: 24px;
+                }
+
+                .content {
+                    padding: 20px;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <!-- Header -->
+            <div class="header">
+                <div class="logo">WS</div>
+                <h1>Disbursement Confirmed</h1>
+                <p>Your loan has been successfully disbursed</p>
+            </div>
+
+            <!-- Content -->
+            <div class="content">
+                <p class="greeting">Dear {{ user.get_full_name|default:user.username }},</p>
+
+                <p>
+                    We are pleased to inform you that your loan disbursement has been processed and the funds are now
+                    available in your account.
+                </p>
+
+                <div class="highlight">
+                    <strong>Amount Disbursed:</strong>
+                    <span class="amount">
+                        {{ disbursement.currency }} {{ disbursement.amount|floatformat:2 }}
+                    </span>
+                </div>
+
+                <table class="details-table">
+                    <tr>
+                        <th>Loan Account</th>
+                        <td><strong>{{ disbursement.loan_account.account_number }}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Disbursement Type</th>
+                        <td>{{ disbursement.get_disbursement_type_display }}</td>
+                    </tr>
+                    <tr>
+                        <th>Reference</th>
+                        <td><code>{{ disbursement.reference }}</code></td>
+                    </tr>
+                    <tr>
+                        <th>Date & Time</th>
+                        <td>{{ disbursement.created_at|date:"d M Y \a\t h:i A" }}</td>
+                    </tr>
+                    <tr>
+                        <th>Status</th>
+                        <td>
+                            <span style="color: #16a34a; font-weight: 600;">
+                                {{ disbursement.get_transaction_status_display }}
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+
+                <p style="text-align: center;">
+                    <a href="https://wananchimali.com/member/dashboard" class="btn" target="_blank">
+                        View My Dashboard
+                    </a>
+                </p>
+
+                <p>
+                    If you have any questions, feel free to contact our support team at
+                    <a href="mailto:support@wananchimali.com">support@wananchimali.com</a>.
+                </p>
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                <p>
+                    &copy; {{ current_year }} <strong>Tamarind SACCO</strong>. All rights reserved.<br />
+                    <a href="https://wananchimali.com">wananchimali.com</a> |
+                    <a href="mailto:info@wananchimali.com">info@wananchimali.com</a>
+                </p>
+                <p style="font-size: 12px; margin-top: 15px; opacity: 0.7;">
+                    This is an automated message. Please do not reply.
+                </p>
+            </div>
+        </div>
+    </body>
+
+</html>
