@@ -70,7 +70,7 @@ class LoanDisbursement(TimeStampedModel, UniversalIdModel, ReferenceModel):
             if not self.identity:
                 self.identity = self.generate_identity()
             
-            if self.is_active and self.transaction_status == "Completed":
+            if self.transaction_status == "Completed":
                 # Update the loan account balance
                 self.loan_account.outstanding_balance += self.amount
                 self.loan_account.save()

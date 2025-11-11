@@ -834,7 +834,7 @@ class MemberYearlySummaryPDFView(APIView):
 
         # Render HTML with logo
         html_string = render_to_string(
-            "yearly_summary_pdf.html",
+            "reports/yearly_summary_pdf.html",
             {
                 "data": data,
                 "member": member,
