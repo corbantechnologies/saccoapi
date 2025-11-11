@@ -19,7 +19,8 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     account_number = models.CharField(
         max_length=20, unique=True, default=generate_loan_account_number
     )
-    loan_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    # Core financial fields
     outstanding_balance = models.DecimalField(
         max_digits=12, decimal_places=2, default=0.00
     )
@@ -28,16 +29,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     )
     is_active = models.BooleanField(default=True)
 
-    # TODO: Implement approval workflow
-    is_approved = models.BooleanField(default=False)
-    approval_date = models.DateTimeField(null=True, blank=True)
-    approved_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="approved_loans",
-    )
+    # System fields
     identity = models.CharField(max_length=100, blank=True, null=True, unique=True)
     last_interest_calculation = models.DateTimeField(null=True, blank=True)
 
@@ -49,35 +41,9 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     def __str__(self):
         return f"{self.account_number} - {self.member.member_no}"
 
-    def calculate_monthly_interest(self):
-        """
-        Calculate monthly compound interest based on loan type's interest rate and if the type allows the calculation.
-        """
-        if not self.is_active:
-            return
-
-        now = timezone.now()
-        if self.loan_type.system_calculates_interest:
-            if not self.last_interest_calculation:
-                self.last_interest_calculation = self.created_at
-
-            months_passed = relativedelta(now, self.last_interest_calculation).months
-            if months_passed >= 1:
-                monthly_rate = self.loan_type.interest_rate / 12 / 100
-                monthly_interest = (
-                    self.outstanding_balance + self.interest_accrued
-                ) * monthly_rate
-                self.interest_accrued += monthly_interest
-                self.last_interest_calculation = now
-                self.save()
-
     def save(self, *args, **kwargs):
         if not self.identity:
             self.identity = slugify(f"{self.member.member_no}-{self.account_number}")
-        if self.is_approved and not self.approval_date:
-            self.approval_date = timezone.now()
-            if not self.outstanding_balance:
-                self.outstanding_balance = self.loan_amount
         if self.outstanding_balance <= 0:
             self.is_active = False
         super().save(*args, **kwargs)

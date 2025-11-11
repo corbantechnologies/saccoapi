@@ -57,7 +57,7 @@ class SavingsDeposit(TimeStampedModel, UniversalIdModel, ReferenceModel):
         max_length=100, choices=DEPOSIT_TYPE_CHOICES, default="Individual Deposit"
     )
     transaction_status = models.CharField(
-        max_length=20, choices=TRANSACTION_STATUS_CHOICES, blank=True, null=True
+        max_length=100, choices=TRANSACTION_STATUS_CHOICES, default="Pending"
     )
     is_active = models.BooleanField(default=True)
     receipt_number = models.CharField(max_length=50, blank=True, null=True)

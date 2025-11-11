@@ -1,9 +1,13 @@
 import csv
 import io
+import asyncio
 import cloudinary.uploader
 import logging
 import calendar
+from playwright.async_api import async_playwright
 from datetime import date
+from django.http import HttpResponse
+from django.template.loader import render_to_string
 from django.db import transaction
 from decimal import Decimal
 from rest_framework.response import Response
@@ -19,19 +23,23 @@ from rest_framework.views import APIView
 
 from savings.models import SavingsType
 from ventures.models import VentureType
-from transactions.serializers import AccountSerializer, MemberTransactionSerializer, MonthlySummarySerializer
+from transactions.serializers import (
+    AccountSerializer,
+    MonthlySummarySerializer,
+    BulkUploadSerializer
+)
 from transactions.models import DownloadLog, BulkTransactionLog
-from savings.serializers import SavingsDepositSerializer
-from venturepayments.serializers import VenturePaymentSerializer
-from venturedeposits.serializers import VentureDepositSerializer
 from accounts.permissions import IsSystemAdminOrReadOnly
 from loantypes.models import LoanType
-from savingswithdrawals.models import SavingsWithdrawal
 from savingsdeposits.models import SavingsDeposit
 from venturepayments.models import VenturePayment
 from venturedeposits.models import VentureDeposit
 from ventures.models import VentureAccount
 from loans.models import LoanAccount
+from loanrepayments.models import LoanRepayment
+from loanintereststamarind.models import TamarindLoanInterest
+from loandisbursements.models import LoanDisbursement
+from savings.models import SavingsAccount
 
 
 logger = logging.getLogger(__name__)
@@ -69,10 +77,13 @@ class AccountListDownloadView(generics.ListAPIView):
     permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
-        return (
-            User.objects.all()
-            .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts", "loans")
+        return User.objects.filter(is_member=True).prefetch_related(
+            "savings_accounts",
+            "venture_accounts",
+            "loans",
+            "loans__loan_disbursements",
+            "loans__repayments",
+            "loans__loan_interests__loan_account__loan_type",
         )
 
     def get(self, request, *args, **kwargs):
@@ -80,18 +91,19 @@ class AccountListDownloadView(generics.ListAPIView):
             request.query_params.get("interest_only", "false").lower() == "true"
         )
 
-        # Get savings, venture, and loan types
-        savings_types = SavingsType.objects.values_list("name", flat=True)
-        venture_types = VentureType.objects.values_list("name", flat=True)
-        loan_types = LoanType.objects.values_list("name", flat=True)
+        # Load types
+        savings_types = list(SavingsType.objects.values_list("name", flat=True))
+        venture_types = list(VentureType.objects.values_list("name", flat=True))
+        loan_types = list(LoanType.objects.values_list("name", flat=True))
 
-        # Serialize data
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-        data = serializer.data  # Directly use serializer.data (ReturnList)
+        data = serializer.data
+
+        buffer = io.StringIO()
 
         if interest_only:
-            # Interest-only CSV
+            # === INTEREST-ONLY CSV (unchanged) ===
             headers = [
                 "Member Number",
                 "Member Name",
@@ -99,42 +111,57 @@ class AccountListDownloadView(generics.ListAPIView):
                 "Loan Type",
                 "Interest Amount",
                 "Outstanding Balance",
+                "Date",
             ]
-            buffer = io.StringIO()
             writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
             writer.writeheader()
 
             for user in data:
-                for amount, acc_no, outstanding_balance in user["loan_interest"]:
-                    loan_type = ""
-                    for acc in user["loan_accounts"]:
-                        if acc[0] == acc_no:
-                            loan_type = acc[1]
+                for amount, acc_no, lt_name, date in user["loan_interest"]:
+                    out_bal = 0.0
+                    for la_acc_no, _, la_out_bal in user["loan_accounts"]:
+                        if la_acc_no == acc_no:
+                            out_bal = float(la_out_bal)
                             break
-                    if loan_type:
-                        row = {
+                    writer.writerow(
+                        {
                             "Member Number": user["member_no"],
                             "Member Name": user["member_name"],
                             "Loan Account": acc_no,
-                            "Loan Type": loan_type,
+                            "Loan Type": lt_name,
                             "Interest Amount": f"{amount:.2f}",
-                            "Outstanding Balance": f"{outstanding_balance:.2f}",
+                            "Outstanding Balance": f"{out_bal:.2f}",
+                            "Date": date.strftime("%Y-%m-%d") if date else "",
                         }
-                        writer.writerow(row)
+                    )
 
-            file_name = f"interest_transactions_{datetime.now().strftime('%Y%m%d')}.csv"
+            file_name = f"interest_transactions_{datetime.now():%Y%m%d}.csv"
             cloudinary_path = f"interest_transactions/{file_name}"
-        else:
-            # Main account list CSV
-            headers = ["Member Number", "Member Name"]
-            for stype in savings_types:
-                headers.extend([f"{stype} Account", f"{stype} Balance"])
-            for vtype in venture_types:
-                headers.extend([f"{vtype} Account", f"{vtype} Balance"])
-            for ltype in loan_types:
-                headers.extend([f"{ltype} Account", f"{ltype} Balance"])
 
-            buffer = io.StringIO()
+        else:
+            # === FULL ACCOUNT LIST + BULK UPLOAD COLUMNS ===
+            headers = ["Member Number", "Member Name"]
+
+            # Savings: Account + Amount
+            for st in savings_types:
+                headers += [f"{st} Account", f"{st} Amount"]
+
+            # Ventures: Account + Amount + Payment Amount
+            for vt in venture_types:
+                headers += [f"{vt} Account", f"{vt} Amount", f"{vt} Payment Amount"]
+
+            # Loans: Account + Disbursement + Repayment + Interest
+            for lt in loan_types:
+                headers += [
+                    f"{lt} Account",
+                    f"{lt} Disbursement Amount",
+                    f"{lt} Repayment Amount",
+                    f"{lt} Interest Amount",
+                ]
+
+            # Optional: Payment Method
+            headers += ["Payment Method"]
+
             writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
             writer.writeheader()
 
@@ -142,132 +169,119 @@ class AccountListDownloadView(generics.ListAPIView):
                 row = {
                     "Member Number": user["member_no"],
                     "Member Name": user["member_name"],
+                    "Payment Method": "Cash",  # Default
                 }
-                for stype in savings_types:
-                    row[f"{stype} Account"] = ""
-                    row[f"{stype} Balance"] = ""
-                for vtype in venture_types:
-                    row[f"{vtype} Account"] = ""
-                    row[f"{vtype} Balance"] = ""
-                for ltype in loan_types:
-                    row[f"{ltype} Account"] = ""
-                    row[f"{ltype} Balance"] = ""
 
+                # Initialize all to empty
+                for st in savings_types:
+                    row[f"{st} Account"] = row[f"{st} Amount"] = ""
+                for vt in venture_types:
+                    row[f"{vt} Account"] = row[f"{vt} Amount"] = row[
+                        f"{vt} Payment Amount"
+                    ] = ""
+                for lt in loan_types:
+                    row[f"{lt} Account"] = row[f"{lt} Disbursement Amount"] = ""
+                    row[f"{lt} Repayment Amount"] = row[f"{lt} Interest Amount"] = ""
+
+                # === Fill from existing data ===
+                # Savings
                 for acc_no, acc_type, balance in user["savings_accounts"]:
                     row[f"{acc_type} Account"] = acc_no
-                    row[f"{acc_type} Balance"] = f"{balance:.2f}"
+                    # Amount column stays blank for bulk edit
 
+                # Ventures
                 for acc_no, acc_type, balance in user["venture_accounts"]:
                     row[f"{acc_type} Account"] = acc_no
-                    row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
-                for acc_no, acc_type, outstanding_balance, _ in user["loan_accounts"]:
-                    row[f"{acc_type} Account"] = acc_no
-                    row[f"{acc_type} Balance"] = f"{outstanding_balance:.2f}"
+                # Loans
+                loan_totals = {
+                    lt: {"disb": 0.0, "rep": 0.0, "int": 0.0} for lt in loan_types
+                }
+                for acc_no, lt_name, out_bal in user["loan_accounts"]:
+                    row[f"{lt_name} Account"] = acc_no
+
+                # Sum totals (for reference only — not used in bulk)
+                for amt, _, lt_name, _ in user["loan_disbursements"]:
+                    if lt_name in loan_totals:
+                        loan_totals[lt_name]["disb"] += float(amt)
+                for amt, _, lt_name, _ in user["loan_repayments"]:
+                    if lt_name in loan_totals:
+                        loan_totals[lt_name]["rep"] += float(amt)
+                for amt, _, lt_name, _ in user["loan_interest"]:
+                    if lt_name in loan_totals:
+                        loan_totals[lt_name]["int"] += float(amt)
+
+                # Optional: Show current totals in comments (or skip)
+                # Not needed for bulk — admin will overwrite
 
                 writer.writerow(row)
 
-            file_name = f"account_list_{datetime.now().strftime('%Y%m%d')}.csv"
-            cloudinary_path = f"account_lists/{file_name}"
+            file_name = f"bulk_upload_template_{datetime.now():%Y%m%d}.csv"
+            cloudinary_path = f"bulk_templates/{file_name}"
 
-        # Upload to Cloudinary
+        # === Upload to Cloudinary ===
         buffer.seek(0)
-        try:
-            upload_result = cloudinary.uploader.upload(
-                buffer,
-                resource_type="raw",
-                public_id=cloudinary_path,
-                format="csv",
-            )
-        except Exception as e:
-            logger.error(f"Cloudinary upload failed: {str(e)}")
-            return Response(
-                {"error": "Failed to upload file to storage"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        upload_result = cloudinary.uploader.upload(
+            buffer, resource_type="raw", public_id=cloudinary_path, format="csv"
+        )
 
-        # Log the download
-        try:
-            DownloadLog.objects.create(
-                admin=request.user,
-                file_name=file_name,
-                cloudinary_url=upload_result["secure_url"],
-            )
-        except Exception as e:
-            logger.error(f"Failed to create DownloadLog: {str(e)}")
-            return Response(
-                {"error": "Failed to log download"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        # === Log ===
+        DownloadLog.objects.create(
+            admin=request.user,
+            file_name=file_name,
+            cloudinary_url=upload_result["secure_url"],
+        )
 
-        # Prepare response
+        # === Return CSV ===
         buffer.seek(0)
         response = StreamingHttpResponse(buffer, content_type="text/csv")
-        response["Content-Disposition"] = f"attachment; filename={file_name}"
+        response["Content-Disposition"] = f'attachment; filename="{file_name}"'
         return response
 
 
 class CombinedBulkUploadView(generics.CreateAPIView):
+    serializer_class = BulkUploadSerializer  # ← REQUIRED!
     permission_classes = [IsSystemAdminOrReadOnly]
 
     def post(self, request, *args, **kwargs):
-        file = request.FILES.get("file")
-        if not file:
-            return Response(
-                {"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST
-            )
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Read CSV
-        try:
-            csv_content = file.read().decode("utf-8")
-            csv_file = io.StringIO(csv_content)
-            reader = csv.DictReader(csv_file)
-        except Exception as e:
-            return Response(
-                {"error": f"Invalid CSV file: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        file = serializer.validated_data["file"]
+        csv_content = file.read().decode("utf-8")
+        csv_file = io.StringIO(csv_content)
+        reader = csv.DictReader(csv_file)
 
-        # Get types for validation
-        savings_types = SavingsType.objects.all().values_list("name", flat=True)
-        venture_types = VentureType.objects.all().values_list("name", flat=True)
+        # Load types
+        savings_types = list(SavingsType.objects.values_list("name", flat=True))
+        venture_types = list(VentureType.objects.values_list("name", flat=True))
+        loan_types = list(LoanType.objects.values_list("name", flat=True))
 
-        # Validate CSV columns
-        required_savings_columns = [f"{stype} Account" for stype in savings_types] + [
-            f"{stype} Amount" for stype in savings_types
-        ]
-        required_venture_columns = (
-            [f"{vtype} Account" for vtype in venture_types]
-            + [f"{vtype} Amount" for vtype in venture_types]
-            + [f"{vtype} Payment Amount" for vtype in venture_types]
-        )
-        if not any(
-            col in reader.fieldnames
-            for col in required_savings_columns + required_venture_columns
-        ):
+        # Validate: At least one valid account column
+        valid_pairs = 0
+        for t in savings_types + venture_types + loan_types:
+            acc_col = f"{t} Account"
+            if acc_col in reader.fieldnames:
+                valid_pairs += 1
+        if valid_pairs == 0:
             return Response(
-                {
-                    "error": "CSV must include at least one valid column pair (e.g., 'Members Contribution Account', 'Members Contribution Amount' or 'Venture A Account', 'Venture A Amount'/'Venture A Payment Amount')."
-                },
+                {"error": "CSV must include at least one '{Type} Account' column."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         admin = request.user
         today = date.today()
-        date_str = today.strftime("%Y%m%d")
-        prefix = f"COMBINED-BULK-{date_str}"
+        prefix = f"COMBINED-BULK-{today:%Y%m%d}"
 
-        # Initialize log
         log = BulkTransactionLog.objects.create(
             admin=admin,
-            transaction_type="Combined Bulk Updates",
+            transaction_type="Combined Bulk",
             reference_prefix=prefix,
-            success_count=0,
-            error_count=0,
             file_name=file.name,
         )
 
-        # Upload to Cloudinary
+        # Upload original file to Cloudinary
         buffer = io.StringIO(csv_content)
         upload_result = cloudinary.uploader.upload(
             buffer,
@@ -278,159 +292,145 @@ class CombinedBulkUploadView(generics.CreateAPIView):
         log.cloudinary_url = upload_result["secure_url"]
         log.save()
 
-        success_count = 0
-        error_count = 0
+        success_count = error_count = 0
         errors = []
 
         with transaction.atomic():
-            for index, row in enumerate(reader, 1):
+            for idx, row in enumerate(reader, 1):
                 try:
-                    # Process savings deposits
-                    for stype in savings_types:
-                        amount_key = f"{stype} Amount"
-                        account_key = f"{stype} Account"
-                        if amount_key in row and row[amount_key] and row[account_key]:
-                            amount = float(row[amount_key])
-                            if amount < Decimal("0.01"):
-                                raise ValueError(f"{amount_key} must be greater than 0")
-                            deposit_data = {
-                                "savings_account": row[account_key],
-                                "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                                "deposit_type": "Individual Deposit",
-                                "currency": "KES",
-                                "transaction_status": "Completed",
-                                "is_active": True,
-                            }
-                            deposit_serializer = SavingsDepositSerializer(
-                                data=deposit_data
-                            )
-                            if deposit_serializer.is_valid():
-                                deposit = deposit_serializer.save(deposited_by=admin)
-                                success_count += 1
-                                account_owner = deposit.savings_account.member
-                                # if account_owner.email:
-                                #     send_deposit_made_email(account_owner, deposit)
-                            else:
-                                error_count += 1
-                                errors.append(
-                                    {
-                                        "row": index,
-                                        "account": row[account_key],
-                                        "error": str(deposit_serializer.errors),
-                                    }
-                                )
-
-                    # Process venture deposits
-                    for vtype in venture_types:
-                        amount_key = f"{vtype} Amount"
-                        account_key = f"{vtype} Account"
-                        if amount_key in row and row[amount_key] and row[account_key]:
-                            amount = float(row[amount_key])
-                            if amount < Decimal("0.01"):
-                                raise ValueError(f"{amount_key} must be greater than 0")
-                            deposit_data = {
-                                "venture_account": row[account_key],
-                                "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                            }
-                            deposit_serializer = VentureDepositSerializer(
-                                data=deposit_data
-                            )
-                            if deposit_serializer.is_valid():
-                                deposit = deposit_serializer.save(deposited_by=admin)
-                                success_count += 1
-                                account_owner = deposit.venture_account.member
-                                # if account_owner.email:
-                                #     send_venture_deposit_made_email(account_owner, deposit)
-                            else:
-                                error_count += 1
-                                errors.append(
-                                    {
-                                        "row": index,
-                                        "account": row[account_key],
-                                        "error": str(deposit_serializer.errors),
-                                    }
-                                )
-
-                    # Process venture payments
-                    for vtype in venture_types:
-                        payment_key = f"{vtype} Payment Amount"
-                        account_key = f"{vtype} Account"
-                        if payment_key in row and row[payment_key] and row[account_key]:
-                            amount = float(row[payment_key])
-                            if amount < Decimal("0.01"):
-                                raise ValueError(
-                                    f"{payment_key} must be greater than 0"
-                                )
-                            payment_data = {
-                                "venture_account": row[account_key],
-                                "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                                "payment_type": row.get(
-                                    "Payment Type", "Individual Settlement"
+                    # === SAVINGS ===
+                    for st in savings_types:
+                        acc_key = f"{st} Account"
+                        amt_key = f"{st} Amount"
+                        if row.get(acc_key) and row.get(amt_key):
+                            amount = Decimal(row[amt_key])
+                            if amount <= 0:
+                                raise ValueError(f"{amt_key} must be > 0")
+                            SavingsDeposit.objects.create(
+                                savings_account=SavingsAccount.objects.get(
+                                    account_number=row[acc_key]
                                 ),
-                                "transaction_status": "Completed",
-                            }
-                            payment_serializer = VenturePaymentSerializer(
-                                data=payment_data
+                                amount=amount,
+                                deposited_by=admin,
+                                payment_method=row.get("Payment Method", "Cash"),
+                                transaction_status="Completed",
                             )
-                            if payment_serializer.is_valid():
-                                payment = payment_serializer.save(paid_by=admin)
-                                success_count += 1
-                                account_owner = payment.venture_account.member
-                                # if account_owner.email:
-                                #     send_venture_payment_confirmation_email(account_owner, payment)
-                            else:
-                                error_count += 1
-                                errors.append(
-                                    {
-                                        "row": index,
-                                        "account": row[account_key],
-                                        "error": str(payment_serializer.errors),
-                                    }
+                            success_count += 1
+
+                    # === VENTURES ===
+                    for vt in venture_types:
+                        acc_key = f"{vt} Account"
+                        dep_key = f"{vt} Amount"
+                        pay_key = f"{vt} Payment Amount"
+                        if row.get(acc_key):
+                            if row.get(dep_key):
+                                VentureDeposit.objects.create(
+                                    venture_account=VentureAccount.objects.get(
+                                        account_number=row[acc_key]
+                                    ),
+                                    amount=Decimal(row[dep_key]),
+                                    deposited_by=admin,
                                 )
+                                success_count += 1
+                            if row.get(pay_key):
+                                VenturePayment.objects.create(
+                                    venture_account=VentureAccount.objects.get(
+                                        account_number=row[acc_key]
+                                    ),
+                                    amount=Decimal(row[pay_key]),
+                                    paid_by=admin,
+                                )
+                                success_count += 1
+
+                    # === LOANS ===
+                    for lt in loan_types:
+                        acc_key = f"{lt} Account"
+                        disb_key = f"{lt} Disbursement Amount"
+                        rep_key = f"{lt} Repayment Amount"
+                        int_key = f"{lt} Interest Amount"
+
+                        if row.get(acc_key):
+                            loan_acc = LoanAccount.objects.get(
+                                account_number=row[acc_key]
+                            )
+
+                            # Interest: optional
+                            interest_val = row.get(int_key, "").strip()
+                            if interest_val:
+                                interest_amount = Decimal(interest_val)
+                                if interest_amount < 0:
+                                    raise ValueError("Interest cannot be negative")
+                                TamarindLoanInterest.objects.create(
+                                    loan_account=loan_acc,
+                                    amount=interest_amount,
+                                    entered_by=admin,
+                                )
+                                loan_acc.interest_accrued += interest_amount
+                                success_count += 1
+
+                            # Disbursement
+                            if row.get(disb_key):
+                                amount = Decimal(row[disb_key])
+                                if amount <= 0:
+                                    raise ValueError("Disbursement must be > 0")
+                                LoanDisbursement.objects.create(
+                                    loan_account=loan_acc,
+                                    amount=amount,
+                                    disbursed_by=admin,
+                                    transaction_status="Completed",
+                                )
+                                loan_acc.outstanding_balance += amount
+                                success_count += 1
+
+                            # Repayment
+                            if row.get(rep_key):
+                                amount = Decimal(row[rep_key])
+                                if amount <= 0:
+                                    raise ValueError("Repayment must be > 0")
+                                LoanRepayment.objects.create(
+                                    loan_account=loan_acc,
+                                    amount=amount,
+                                    paid_by=admin,
+                                    transaction_status="Completed",
+                                )
+                                loan_acc.outstanding_balance -= amount
+                                success_count += 1
+
+                            loan_acc.save()
 
                 except Exception as e:
                     error_count += 1
-                    errors.append({"row": index, "error": str(e)})
+                    errors.append({"row": idx, "error": str(e)})
 
-            # Update log
-            try:
-                log.success_count = success_count
-                log.error_count = error_count
-                log.save()
-            except Exception as e:
-                logger.error(f"Failed to update BulkTransactionLog: {str(e)}")
-                return Response(
-                    {"error": "Failed to update transaction log"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        log.success_count = success_count
+        log.error_count = error_count
+        log.save()
 
-        response_data = {
-            "success_count": success_count,
-            "error_count": error_count,
-            "errors": errors,
-            "log_reference": log.reference_prefix,
-            "cloudinary_url": log.cloudinary_url,
-        }
         return Response(
-            response_data,
+            {
+                "success_count": success_count,
+                "error_count": error_count,
+                "errors": errors,
+                "log_reference": log.reference_prefix,
+                "cloudinary_url": log.cloudinary_url,
+            },
             status=(
                 status.HTTP_201_CREATED
-                if success_count > 0
+                if success_count
                 else status.HTTP_400_BAD_REQUEST
             ),
         )
 
 
+# =================================================================================================
+# MEMBER FINANCIAL SUMMARY
+# =================================================================================================
+
 class MemberYearlySummaryView(APIView):
     """
-    Full member financial summary: yearly + monthly breakdown
-    - All types shown (even 0.0)
-    - Year dynamic: ?year=2024
-    - No withdrawals
-    - Chart of accounts = yearly only
+    Member financial summary with exact JSON structure.
+    - monthly_summary: list of months with by_type as list of objects
+    - chart_of_accounts: yearly only, by_type as list
     """
 
     def get(self, request, member_no):
@@ -446,54 +446,67 @@ class MemberYearlySummaryView(APIView):
         # ------------------------------------------------------------------
         # 1. PRE-LOAD ALL TYPES
         # ------------------------------------------------------------------
-        all_savings_types = {t.name: Decimal("0.00") for t in SavingsType.objects.all()}
-        all_venture_types = {t.name: Decimal("0.00") for t in VentureType.objects.all()}
-        all_loan_types = {t.name: Decimal("0.00") for t in LoanType.objects.all()}
+        all_savings_types = {t.name: t for t in SavingsType.objects.all()}
+        all_venture_types = {t.name: t for t in VentureType.objects.all()}
+        all_loan_types = {t.name: t for t in LoanType.objects.all()}
 
         # ------------------------------------------------------------------
-        # 2. MONTHLY DATA (12 months)
+        # 2. YEARLY + MONTHLY AGGREGATES
         # ------------------------------------------------------------------
-        months = []
-        yearly_savings = defaultdict(Decimal)
-        yearly_vent_dep = defaultdict(Decimal)
-        yearly_vent_pay = defaultdict(Decimal)
-        yearly_loan_disb = defaultdict(Decimal)
-        yearly_loan_out = defaultdict(Decimal)
+        monthly_summary = []
+        yearly = {
+            "savings": defaultdict(Decimal),
+            "vent_dep": defaultdict(Decimal),
+            "vent_pay": defaultdict(Decimal),
+            "loan_disb": defaultdict(Decimal),
+            "loan_rep": defaultdict(Decimal),
+            "loan_int": defaultdict(Decimal),
+            "loan_out": defaultdict(Decimal),
+        }
 
         for month in range(1, 13):
             month_name = calendar.month_name[month]
             month_key = f"{month_name} {year}"
 
-            # ---- SAVINGS DEPOSITS (monthly) ----
+            # ---- SAVINGS ----
             savings_deps = SavingsDeposit.objects.filter(
                 savings_account__member=member,
                 created_at__year=year,
                 created_at__month=month,
             ).select_related("savings_account__account_type")
 
-            savings_by_type = defaultdict(Decimal)
-            savings_deposit_list = []
-
+            savings_by_type = defaultdict(
+                lambda: {"total": Decimal("0.00"), "deposits": []}
+            )
             for dep in savings_deps:
                 stype = dep.savings_account.account_type.name
                 amount = Decimal(str(dep.amount))
-                savings_by_type[stype] += amount
-                yearly_savings[stype] += amount
-                savings_deposit_list.append(
+                savings_by_type[stype]["total"] += amount
+                yearly["savings"][stype] += amount
+                savings_by_type[stype]["deposits"].append(
                     {
-                        "date": dep.created_at.strftime("%Y-%m-%d"),
                         "type": stype,
                         "amount": float(amount),
-                        "ref": dep.reference or f"DEP{dep.id}",
                     }
                 )
 
-            final_savings = {
-                k: float(savings_by_type.get(k, Decimal("0.00")))
-                for k in all_savings_types
-            }
+            # Fill missing types
+            savings_list = []
+            for name, obj in all_savings_types.items():
+                data = savings_by_type.get(
+                    name, {"total": Decimal("0.00"), "deposits": []}
+                )
+                savings_list.append(
+                    {
+                        "type": name,
+                        "amount": float(data["total"]),
+                        "deposits": data["deposits"],
+                    }
+                )
 
-            # ---- VENTURES (monthly) ----
+            total_savings_month = sum(item["amount"] for item in savings_list)
+
+            # ---- VENTURES ----
             vent_deps = VentureDeposit.objects.filter(
                 venture_account__member=member,
                 created_at__year=year,
@@ -506,122 +519,165 @@ class MemberYearlySummaryView(APIView):
                 created_at__month=month,
             ).select_related("venture_account__venture_type")
 
-            vent_dep_by_type = defaultdict(Decimal)
-            vent_pay_by_type = defaultdict(Decimal)
-            vent_deposit_list = []
-            vent_payment_list = []
-
+            vent_by_type = defaultdict(lambda: {"deposits": [], "payments": []})
             for dep in vent_deps:
                 vtype = dep.venture_account.venture_type.name
                 amount = Decimal(str(dep.amount))
-                vent_dep_by_type[vtype] += amount
-                yearly_vent_dep[vtype] += amount
-                vent_deposit_list.append(
+                vent_by_type[vtype]["deposits"].append(
                     {
-                        "date": dep.created_at.strftime("%Y-%m-%d"),
-                        "type": vtype,
+                        "venture_type": vtype,
                         "amount": float(amount),
-                        "ref": dep.reference or f"VDEP{dep.id}",
                     }
                 )
+                yearly["vent_dep"][vtype] += amount
 
             for pay in vent_pays:
                 vtype = pay.venture_account.venture_type.name
                 amount = Decimal(str(pay.amount))
-                vent_pay_by_type[vtype] += amount
-                yearly_vent_pay[vtype] += amount
-                vent_payment_list.append(
+                vent_by_type[vtype]["payments"].append(
                     {
-                        "date": pay.created_at.strftime("%Y-%m-%d"),
-                        "type": vtype,
+                        "venture_type": vtype,
                         "amount": float(amount),
-                        "ref": pay.reference or f"VPAY{pay.id}",
+                    }
+                )
+                yearly["vent_pay"][vtype] += amount
+
+            # Fill missing
+            ventures_list = []
+            for name, obj in all_venture_types.items():
+                data = vent_by_type.get(name, {"deposits": [], "payments": []})
+                dep_total = sum(d["amount"] for d in data["deposits"])
+                pay_total = sum(p["amount"] for p in data["payments"])
+                ventures_list.append(
+                    {
+                        "venture_type": name,
+                        "venture_deposits": data["deposits"],
+                        "venture_payments": data["payments"],
                     }
                 )
 
-            final_vent_dep = {
-                k: float(vent_dep_by_type.get(k, Decimal("0.00")))
-                for k in all_venture_types
-            }
-            final_vent_pay = {
-                k: float(vent_pay_by_type.get(k, Decimal("0.00")))
-                for k in all_venture_types
-            }
+            total_vent_dep = sum(yearly["vent_dep"].values())
+            total_vent_pay = sum(yearly["vent_pay"].values())
+            net_venture = total_vent_dep - total_vent_pay
 
-            # ---- LOANS (monthly disbursed + outstanding) ----
+            # ---- LOANS ----
+            disbursements = LoanDisbursement.objects.filter(
+                loan_account__member=member,
+                created_at__year=year,
+                created_at__month=month,
+            ).select_related("loan_account__loan_type")
+
+            repayments = LoanRepayment.objects.filter(
+                loan_account__member=member,
+                created_at__year=year,
+                created_at__month=month,
+            ).select_related("loan_account__loan_type")
+
+            interests = TamarindLoanInterest.objects.filter(
+                loan_account__member=member,
+                created_at__year=year,
+                created_at__month=month,
+            ).select_related("loan_account__loan_type")
+
+            loan_by_type = defaultdict(
+                lambda: {
+                    "disbursed": [],
+                    "repaid": [],
+                    "interest": [],
+                    "outstanding": Decimal("0.00"),
+                }
+            )
+
+            for d in disbursements:
+                ltype = d.loan_account.loan_type.name
+                amount = Decimal(str(d.amount))
+                loan_by_type[ltype]["disbursed"].append(
+                    {
+                        "loan_type": ltype,
+                        "amount": float(amount),
+                    }
+                )
+                yearly["loan_disb"][ltype] += amount
+
+            for r in repayments:
+                ltype = r.loan_account.loan_type.name
+                amount = Decimal(str(r.amount))
+                loan_by_type[ltype]["repaid"].append(
+                    {
+                        "loan_type": ltype,
+                        "amount": float(amount),
+                    }
+                )
+                yearly["loan_rep"][ltype] += amount
+
+            for i in interests:
+                ltype = i.loan_account.loan_type.name
+                amount = Decimal(str(i.amount))
+                loan_by_type[ltype]["interest"].append(
+                    {
+                        "loan_type": ltype,
+                        "amount": float(amount),
+                    }
+                )
+                yearly["loan_int"][ltype] += amount
+
+            # Outstanding balance
             loan_accounts = LoanAccount.objects.filter(member=member).select_related(
                 "loan_type"
             )
-            loan_list = []
-            loan_disb_by_type = defaultdict(Decimal)
-            loan_out_by_type = defaultdict(Decimal)
-
             for loan in loan_accounts:
-                disbursed = Decimal("0.00")
-                for d in loan.disbursements.filter(
-                    disbursed_at__year=year, disbursed_at__month=month
-                ):
-                    disbursed += Decimal(str(d.amount))
-
-                outstanding = Decimal(str(loan.outstanding_balance or 0))
                 ltype = loan.loan_type.name
+                outstanding = Decimal(str(loan.outstanding_balance or 0))
+                loan_by_type[ltype]["outstanding"] += outstanding
+                yearly["loan_out"][ltype] += outstanding
 
-                loan_disb_by_type[ltype] += disbursed
-                loan_out_by_type[ltype] += outstanding
-                yearly_loan_disb[ltype] += disbursed
-                yearly_loan_out[ltype] += outstanding
-
-                loan_list.append(
+            # Build loan list
+            loans_list = []
+            for name, obj in all_loan_types.items():
+                data = loan_by_type.get(
+                    name,
                     {
-                        "account_no": loan.account_no,
-                        "type": ltype,
-                        "disbursed": float(disbursed),
-                        "outstanding": float(outstanding),
+                        "disbursed": [],
+                        "repaid": [],
+                        "interest": [],
+                        "outstanding": Decimal("0.00"),
+                    },
+                )
+                loans_list.append(
+                    {
+                        "loan_type": name,
+                        "total_amount_outstanding": float(data["outstanding"]),
+                        "total_amount_disbursed": data["disbursed"],
+                        "total_amount_repaid": data["repaid"],
+                        "total_interest_charged": data["interest"],
                     }
                 )
 
-            final_loan_disb = {
-                k: float(loan_disb_by_type.get(k, Decimal("0.00")))
-                for k in all_loan_types
-            }
-            final_loan_out = {
-                k: float(loan_out_by_type.get(k, Decimal("0.00")))
-                for k in all_loan_types
-            }
+            total_disb = sum(yearly["loan_disb"].values())
+            total_rep = sum(yearly["loan_rep"].values())
+            total_int = sum(yearly["loan_int"].values())
+            total_out = sum(yearly["loan_out"].values())
 
-            # ---- MONTH TOTALS ----
-            month_savings = sum(final_savings.values())
-            month_vent_dep = sum(final_vent_dep.values())
-            month_vent_pay = sum(final_vent_pay.values())
-            month_ventures = month_vent_dep - month_vent_pay
-            month_loans_disb = sum(final_loan_disb.values())
-            month_loans_out = sum(final_loan_out.values())
-
-            months.append(
+            # ---- MONTH OBJECT ----
+            monthly_summary.append(
                 {
                     "month": month_key,
                     "savings": {
-                        "by_type": final_savings,
-                        "total": float(month_savings),
-                        "deposits": savings_deposit_list,
+                        "total_savings": float(total_savings_month),
+                        "by_type": savings_list,
                     },
                     "ventures": {
-                        "by_type": {
-                            "deposits": final_vent_dep,
-                            "payments": final_vent_pay,
-                        },
-                        "total_net": float(month_ventures),
-                        "deposits": vent_deposit_list,
-                        "payments": vent_payment_list,
+                        "net_venture": float(net_venture),
+                        "venture_deposits": float(total_vent_dep),
+                        "venture_payments": float(total_vent_pay),
+                        "by_type": ventures_list,
                     },
                     "loans": {
-                        "by_type": {
-                            "disbursed": final_loan_disb,
-                            "outstanding": final_loan_out,
-                        },
-                        "total_disbursed": float(month_loans_disb),
-                        "total_outstanding": float(month_loans_out),
-                        "accounts": loan_list,
+                        "total_loans_disbursed": float(total_disb),
+                        "total_loans_repaid": float(total_rep),
+                        "total_interest_charged": float(total_int),
+                        "total_loans_outstanding": float(total_out),
+                        "by_type": loans_list,
                     },
                 }
             )
@@ -629,65 +685,166 @@ class MemberYearlySummaryView(APIView):
         # ------------------------------------------------------------------
         # 3. YEARLY TOTALS
         # ------------------------------------------------------------------
-        final_year_savings = {
-            k: float(yearly_savings.get(k, Decimal("0.00"))) for k in all_savings_types
-        }
-        final_year_vent_dep = {
-            k: float(yearly_vent_dep.get(k, Decimal("0.00"))) for k in all_venture_types
-        }
-        final_year_vent_pay = {
-            k: float(yearly_vent_pay.get(k, Decimal("0.00"))) for k in all_venture_types
-        }
-        final_year_loan_disb = {
-            k: float(yearly_loan_disb.get(k, Decimal("0.00"))) for k in all_loan_types
-        }
-        final_year_loan_out = {
-            k: float(yearly_loan_out.get(k, Decimal("0.00"))) for k in all_loan_types
-        }
-
-        total_savings = sum(final_year_savings.values())
-        total_venture_deposits = sum(final_year_vent_dep.values())
-        total_venture_payments = sum(final_year_vent_pay.values())
-        total_ventures = total_venture_deposits - total_venture_payments
-        total_loans_disbursed = sum(final_year_loan_disb.values())
-        total_loans_outstanding = sum(final_year_loan_out.values())
+        total_savings = sum(yearly["savings"].values())
+        total_vent_dep = sum(yearly["vent_dep"].values())
+        total_vent_pay = sum(yearly["vent_pay"].values())
+        total_ventures_net = total_vent_dep - total_vent_pay
+        total_loan_disb = sum(yearly["loan_disb"].values())
+        total_loan_rep = sum(yearly["loan_rep"].values())
+        total_loan_int = sum(yearly["loan_int"].values())
+        total_loan_out = sum(yearly["loan_out"].values())
 
         # ------------------------------------------------------------------
-        # 4. CHART OF ACCOUNTS (YEARLY ONLY)
+        # 4. CHART OF ACCOUNTS (YEARLY)
         # ------------------------------------------------------------------
         chart_of_accounts = {
-            "total_savings_all_types": float(total_savings),
-            "savings_by_type": final_year_savings,
-            "total_ventures_net": float(total_ventures),
-            "ventures_by_type": {
-                "deposits": final_year_vent_dep,
-                "payments": final_year_vent_pay,
-            },
-            "total_loans_outstanding_all_types": float(total_loans_outstanding),
-            "loans_outstanding_by_type": final_year_loan_out,
-            "total_loans_disbursed_all_types": float(total_loans_disbursed),
-            "loans_disbursed_by_type": final_year_loan_disb,
-            "total_deposits_made": float(total_savings + total_venture_deposits),
+            "total_savings": float(total_savings),
+            "total_ventures": float(total_ventures_net),
+            "total_loans": float(total_loan_out),
+            "total_savings_deposits": float(total_savings),
+            "total_ventures_deposits": float(total_vent_dep),
+            "total_ventures_payments": float(total_vent_pay),
+            "total_loans_disbursed": float(total_loan_disb),
+            "total_loans_repaid": float(total_loan_rep),
+            "total_savings_by_type": [
+                {
+                    "type": name,
+                    "amount": float(yearly["savings"].get(name, Decimal("0.00"))),
+                }
+                for name in all_savings_types
+            ],
+            "total_ventures_by_type": [
+                {
+                    "venture_type": name,
+                    "net_amount": float(
+                        yearly["vent_dep"].get(name, Decimal("0.00"))
+                        - yearly["vent_pay"].get(name, Decimal("0.00"))
+                    ),
+                }
+                for name in all_venture_types
+            ],
+            "total_loans_by_type": [
+                {
+                    "loan_type": name,
+                    "total_outstanding_amount": float(
+                        yearly["loan_out"].get(name, Decimal("0.00"))
+                    ),
+                }
+                for name in all_loan_types
+            ],
         }
 
         # ------------------------------------------------------------------
-        # 5. BUILD RESPONSE
+        # 5. RESPONSE
         # ------------------------------------------------------------------
         response_data = {
             "year": year,
-            "member_no": member.member_no,
-            "member_name": member.get_full_name() or member.username,
             "summary": {
                 "total_savings": float(total_savings),
-                "total_savings_deposits": float(total_savings),
-                "total_ventures": float(total_ventures),
-                "total_venture_deposits": float(total_venture_deposits),
-                "total_venture_payments": float(total_venture_payments),
-                "total_loans_outstanding": float(total_loans_outstanding),
-                "total_loans_disbursed": float(total_loans_disbursed),
+                "total_venture_deposits": float(total_vent_dep),
+                "total_venture_payments": float(total_vent_pay),
+                "total_ventures_net": float(total_ventures_net),
+                "total_loans_disbursed": float(total_loan_disb),
+                "total_loans_repaid": float(total_loan_rep),
+                "total_interest_charged": float(total_loan_int),
+                "total_loans_outstanding": float(total_loan_out),
             },
-            "monthly_breakdown": months,
+            "monthly_summary": monthly_summary,
             "chart_of_accounts": chart_of_accounts,
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
+
+
+# =====================================================================
+# PDF GENERATION
+# =====================================================================
+
+
+# ------------------------------------------------------------------
+# Async PDF Generator (Playwright)
+# ------------------------------------------------------------------
+async def generate_pdf(html_content: str, logo_url: str):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+
+        # Inject logo URL into page context
+        await page.add_init_script(f"window.LOGO_URL = '{logo_url}';")
+
+        # Set full HTML
+        await page.set_content(html_content, wait_until="networkidle")
+
+        # Generate PDF with header/footer
+        pdf_bytes = await page.pdf(
+            format="A4",
+            print_background=True,
+            margin={"top": "1.2cm", "bottom": "1.2cm", "left": "1cm", "right": "1cm"},
+            display_header_footer=True,
+            header_template="""
+                <div style="font-size:10px; text-align:center; width:100%; padding:8px 0; border-bottom:1px solid #eee;">
+                    <strong>Wananchi Mali SACCO</strong>
+                </div>
+            """,
+            footer_template="""
+                <div style="font-size:9px; text-align:center; width:100%; padding:5px 0; border-top:1px solid #eee; color:#666;">
+                    Page <span class="pageNumber"></span> of <span class="totalPages"></span> 
+                    | Generated on {{ generated_at }}
+                </div>
+            """.replace(
+                "{{ generated_at }}", datetime.now().strftime("%d %B %Y")
+            ),
+        )
+        await browser.close()
+        return pdf_bytes
+
+
+class MemberYearlySummaryPDFView(APIView):
+    """
+    Download member yearly financial summary as PDF.
+    Uses Cloudinary logo: https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png
+    """
+
+    def get(self, request, member_no):
+        year = int(request.query_params.get("year", datetime.now().year))
+
+        try:
+            member = User.objects.get(member_no=member_no, is_member=True)
+        except User.DoesNotExist:
+            return Response({"error": "Member not found"}, status=404)
+
+        # Reuse JSON view data
+        from .views import MemberYearlySummaryView
+
+        json_view = MemberYearlySummaryView()
+        json_view.request = request
+        data = json_view.get(request, member_no).data
+
+        # Cloudinary logo URL
+        logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
+
+        # Render HTML with logo
+        html_string = render_to_string(
+            "reports/yearly_summary_pdf.html",
+            {
+                "data": data,
+                "member": member,
+                "year": year,
+                "logo_url": logo_url,
+                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+            },
+        )
+
+        # Generate PDF
+        try:
+            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url))
+        except Exception as e:
+            logger.error(f"PDF generation failed for {member_no}: {e}")
+            return Response({"error": "Failed to generate PDF"}, status=500)
+
+        # Return download
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
+        )
+        return response

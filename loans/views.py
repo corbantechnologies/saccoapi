@@ -6,18 +6,6 @@ from loans.serializers import LoanAccountSerializer
 from accounts.permissions import IsSystemAdminOrReadOnly
 
 
-# SACCO Admin creates loan accounts for members
-class LoanAccountCreateByAdminView(generics.CreateAPIView):
-    queryset = LoanAccount.objects.all()
-    serializer_class = LoanAccountSerializer
-    permission_classes = [
-        IsSystemAdminOrReadOnly,
-    ]
-
-    def perform_create(self, serializer):
-        serializer.save(approved_by=self.request.user)
-
-
 # Members can view and create their own loan accounts
 class LoanAccountListCreateView(generics.ListCreateAPIView):
     queryset = LoanAccount.objects.all()
@@ -30,7 +18,9 @@ class LoanAccountListCreateView(generics.ListCreateAPIView):
         serializer.save(user=self.request.user)
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user)
+        return self.queryset.filter(user=self.request.user).prefetch_related(
+            "repayments", "loan_disbursements", "loan_interests"
+        )
 
 
 class LoanAccountDetailView(generics.RetrieveAPIView):
@@ -43,5 +33,5 @@ class LoanAccountDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return self.queryset.filter(user=self.request.user).prefetch_related(
-            "repayments"
+            "repayments", "loan_disbursements", "loan_interests"
         )
