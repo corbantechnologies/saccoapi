@@ -26,6 +26,7 @@ from ventures.models import VentureType
 from transactions.serializers import (
     AccountSerializer,
     MonthlySummarySerializer,
+    BulkUploadSerializer
 )
 from transactions.models import DownloadLog, BulkTransactionLog
 from accounts.permissions import IsSystemAdminOrReadOnly
@@ -82,7 +83,7 @@ class AccountListDownloadView(generics.ListAPIView):
             "loans",
             "loans__loan_disbursements",
             "loans__repayments",
-            "loans__loan_interests",
+            "loans__loan_interests__loan_account__loan_type",
         )
 
     def get(self, request, *args, **kwargs):
@@ -90,6 +91,7 @@ class AccountListDownloadView(generics.ListAPIView):
             request.query_params.get("interest_only", "false").lower() == "true"
         )
 
+        # Load types
         savings_types = list(SavingsType.objects.values_list("name", flat=True))
         venture_types = list(VentureType.objects.values_list("name", flat=True))
         loan_types = list(LoanType.objects.values_list("name", flat=True))
@@ -101,6 +103,7 @@ class AccountListDownloadView(generics.ListAPIView):
         buffer = io.StringIO()
 
         if interest_only:
+            # === INTEREST-ONLY CSV (unchanged) ===
             headers = [
                 "Member Number",
                 "Member Name",
@@ -114,19 +117,18 @@ class AccountListDownloadView(generics.ListAPIView):
             writer.writeheader()
 
             for user in data:
-                for amount, acc_no, out_bal, date in user["loan_interest"]:
-                    # Find loan type
-                    loan_type = ""
-                    for la_acc_no, la_type, _ in user["loan_accounts"]:
+                for amount, acc_no, lt_name, date in user["loan_interest"]:
+                    out_bal = 0.0
+                    for la_acc_no, _, la_out_bal in user["loan_accounts"]:
                         if la_acc_no == acc_no:
-                            loan_type = la_type
+                            out_bal = float(la_out_bal)
                             break
                     writer.writerow(
                         {
                             "Member Number": user["member_no"],
                             "Member Name": user["member_name"],
                             "Loan Account": acc_no,
-                            "Loan Type": loan_type,
+                            "Loan Type": lt_name,
                             "Interest Amount": f"{amount:.2f}",
                             "Outstanding Balance": f"{out_bal:.2f}",
                             "Date": date.strftime("%Y-%m-%d") if date else "",
@@ -137,18 +139,28 @@ class AccountListDownloadView(generics.ListAPIView):
             cloudinary_path = f"interest_transactions/{file_name}"
 
         else:
+            # === FULL ACCOUNT LIST + BULK UPLOAD COLUMNS ===
             headers = ["Member Number", "Member Name"]
+
+            # Savings: Account + Amount
             for st in savings_types:
-                headers += [f"{st} Account", f"{st} Balance"]
+                headers += [f"{st} Account", f"{st} Amount"]
+
+            # Ventures: Account + Amount + Payment Amount
             for vt in venture_types:
-                headers += [f"{vt} Account", f"{vt} Balance"]
+                headers += [f"{vt} Account", f"{vt} Amount", f"{vt} Payment Amount"]
+
+            # Loans: Account + Disbursement + Repayment + Interest
             for lt in loan_types:
                 headers += [
                     f"{lt} Account",
-                    f"{lt} Outstanding",
-                    f"{lt} Total Disbursed",
-                    f"{lt} Total Repaid",
+                    f"{lt} Disbursement Amount",
+                    f"{lt} Repayment Amount",
+                    f"{lt} Interest Amount",
                 ]
+
+            # Optional: Payment Method
+            headers += ["Payment Method"]
 
             writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
             writer.writeheader()
@@ -157,71 +169,70 @@ class AccountListDownloadView(generics.ListAPIView):
                 row = {
                     "Member Number": user["member_no"],
                     "Member Name": user["member_name"],
+                    "Payment Method": "Cash",  # Default
                 }
 
-                # Init empty
+                # Initialize all to empty
                 for st in savings_types:
-                    row[f"{st} Account"] = row[f"{st} Balance"] = ""
+                    row[f"{st} Account"] = row[f"{st} Amount"] = ""
                 for vt in venture_types:
-                    row[f"{vt} Account"] = row[f"{vt} Balance"] = ""
+                    row[f"{vt} Account"] = row[f"{vt} Amount"] = row[
+                        f"{vt} Payment Amount"
+                    ] = ""
                 for lt in loan_types:
-                    row[f"{lt} Account"] = row[f"{lt} Outstanding"] = ""
-                    row[f"{lt} Total Disbursed"] = row[f"{lt} Total Repaid"] = "0.00"
+                    row[f"{lt} Account"] = row[f"{lt} Disbursement Amount"] = ""
+                    row[f"{lt} Repayment Amount"] = row[f"{lt} Interest Amount"] = ""
 
-                # Fill savings
+                # === Fill from existing data ===
+                # Savings
                 for acc_no, acc_type, balance in user["savings_accounts"]:
                     row[f"{acc_type} Account"] = acc_no
-                    row[f"{acc_type} Balance"] = f"{balance:.2f}"
+                    # Amount column stays blank for bulk edit
 
-                # Fill ventures
+                # Ventures
                 for acc_no, acc_type, balance in user["venture_accounts"]:
                     row[f"{acc_type} Account"] = acc_no
-                    row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
-                # Fill loans
+                # Loans
                 loan_totals = {
-                    lt: {"disb": 0.0, "rep": 0.0, "out": 0.0} for lt in loan_types
+                    lt: {"disb": 0.0, "rep": 0.0, "int": 0.0} for lt in loan_types
                 }
-
                 for acc_no, lt_name, out_bal in user["loan_accounts"]:
                     row[f"{lt_name} Account"] = acc_no
-                    row[f"{lt_name} Outstanding"] = f"{out_bal:.2f}"
-                    loan_totals[lt_name]["out"] = float(out_bal)
 
-                # Sum disbursements
-                for amt, acc_no, lt_name, _ in user["loan_disbursements"]:
+                # Sum totals (for reference only — not used in bulk)
+                for amt, _, lt_name, _ in user["loan_disbursements"]:
                     if lt_name in loan_totals:
                         loan_totals[lt_name]["disb"] += float(amt)
-
-                # Sum repayments
-                for amt, acc_no, lt_name, _ in user["loan_repayments"]:
+                for amt, _, lt_name, _ in user["loan_repayments"]:
                     if lt_name in loan_totals:
                         loan_totals[lt_name]["rep"] += float(amt)
+                for amt, _, lt_name, _ in user["loan_interest"]:
+                    if lt_name in loan_totals:
+                        loan_totals[lt_name]["int"] += float(amt)
 
-                # Write totals
-                for lt, t in loan_totals.items():
-                    row[f"{lt} Total Disbursed"] = f"{t['disb']:.2f}"
-                    row[f"{lt} Total Repaid"] = f"{t['rep']:.2f}"
+                # Optional: Show current totals in comments (or skip)
+                # Not needed for bulk — admin will overwrite
 
                 writer.writerow(row)
 
-            file_name = f"account_list_full_{datetime.now():%Y%m%d}.csv"
-            cloudinary_path = f"account_lists/{file_name}"
+            file_name = f"bulk_upload_template_{datetime.now():%Y%m%d}.csv"
+            cloudinary_path = f"bulk_templates/{file_name}"
 
-        # Upload to Cloudinary
+        # === Upload to Cloudinary ===
         buffer.seek(0)
         upload_result = cloudinary.uploader.upload(
             buffer, resource_type="raw", public_id=cloudinary_path, format="csv"
         )
 
-        # Log
+        # === Log ===
         DownloadLog.objects.create(
             admin=request.user,
             file_name=file_name,
             cloudinary_url=upload_result["secure_url"],
         )
 
-        # Return CSV
+        # === Return CSV ===
         buffer.seek(0)
         response = StreamingHttpResponse(buffer, content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="{file_name}"'
@@ -229,13 +240,15 @@ class AccountListDownloadView(generics.ListAPIView):
 
 
 class CombinedBulkUploadView(generics.CreateAPIView):
+    serializer_class = BulkUploadSerializer  # ← REQUIRED!
     permission_classes = [IsSystemAdminOrReadOnly]
 
     def post(self, request, *args, **kwargs):
-        file = request.FILES.get("file")
-        if not file:
-            return Response({"error": "No file uploaded."}, status=400)
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        file = serializer.validated_data["file"]
         csv_content = file.read().decode("utf-8")
         csv_file = io.StringIO(csv_content)
         reader = csv.DictReader(csv_file)
@@ -245,16 +258,17 @@ class CombinedBulkUploadView(generics.CreateAPIView):
         venture_types = list(VentureType.objects.values_list("name", flat=True))
         loan_types = list(LoanType.objects.values_list("name", flat=True))
 
-        # Validate columns
-        required_cols = (
-            [f"{t} Account" for t in savings_types + venture_types + loan_types]
-            + [f"{t} Amount" for t in savings_types + venture_types]
-            + [f"{t} Payment Amount" for t in venture_types]
-            + [f"{t} Repayment Amount" for t in loan_types]
-            + [f"{t} Disbursement Amount" for t in loan_types]
-        )
-        if not any(col in reader.fieldnames for col in required_cols):
-            return Response({"error": "CSV must include valid columns."}, status=400)
+        # Validate: At least one valid account column
+        valid_pairs = 0
+        for t in savings_types + venture_types + loan_types:
+            acc_col = f"{t} Account"
+            if acc_col in reader.fieldnames:
+                valid_pairs += 1
+        if valid_pairs == 0:
+            return Response(
+                {"error": "CSV must include at least one '{Type} Account' column."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         admin = request.user
         today = date.today()
@@ -267,7 +281,7 @@ class CombinedBulkUploadView(generics.CreateAPIView):
             file_name=file.name,
         )
 
-        # Upload to Cloudinary
+        # Upload original file to Cloudinary
         buffer = io.StringIO(csv_content)
         upload_result = cloudinary.uploader.upload(
             buffer,
@@ -291,14 +305,14 @@ class CombinedBulkUploadView(generics.CreateAPIView):
                         if row.get(acc_key) and row.get(amt_key):
                             amount = Decimal(row[amt_key])
                             if amount <= 0:
-                                raise ValueError("Amount > 0")
+                                raise ValueError(f"{amt_key} must be > 0")
                             SavingsDeposit.objects.create(
                                 savings_account=SavingsAccount.objects.get(
                                     account_number=row[acc_key]
                                 ),
                                 amount=amount,
                                 deposited_by=admin,
-                                payment_method="Cash",
+                                payment_method=row.get("Payment Method", "Cash"),
                                 transaction_status="Completed",
                             )
                             success_count += 1
@@ -333,30 +347,56 @@ class CombinedBulkUploadView(generics.CreateAPIView):
                         acc_key = f"{lt} Account"
                         disb_key = f"{lt} Disbursement Amount"
                         rep_key = f"{lt} Repayment Amount"
+                        int_key = f"{lt} Interest Amount"
+
                         if row.get(acc_key):
                             loan_acc = LoanAccount.objects.get(
                                 account_number=row[acc_key]
                             )
+
+                            # Interest: optional
+                            interest_val = row.get(int_key, "").strip()
+                            if interest_val:
+                                interest_amount = Decimal(interest_val)
+                                if interest_amount < 0:
+                                    raise ValueError("Interest cannot be negative")
+                                TamarindLoanInterest.objects.create(
+                                    loan_account=loan_acc,
+                                    amount=interest_amount,
+                                    entered_by=admin,
+                                )
+                                loan_acc.interest_accrued += interest_amount
+                                success_count += 1
+
+                            # Disbursement
                             if row.get(disb_key):
+                                amount = Decimal(row[disb_key])
+                                if amount <= 0:
+                                    raise ValueError("Disbursement must be > 0")
                                 LoanDisbursement.objects.create(
                                     loan_account=loan_acc,
-                                    amount=Decimal(row[disb_key]),
+                                    amount=amount,
                                     disbursed_by=admin,
                                     transaction_status="Completed",
                                 )
-                                loan_acc.outstanding_balance += Decimal(row[disb_key])
-                                loan_acc.save()
+                                loan_acc.outstanding_balance += amount
                                 success_count += 1
+
+                            # Repayment
                             if row.get(rep_key):
+                                amount = Decimal(row[rep_key])
+                                if amount <= 0:
+                                    raise ValueError("Repayment must be > 0")
                                 LoanRepayment.objects.create(
                                     loan_account=loan_acc,
-                                    amount=Decimal(row[rep_key]),
+                                    amount=amount,
                                     paid_by=admin,
                                     transaction_status="Completed",
                                 )
-                                loan_acc.outstanding_balance -= Decimal(row[rep_key])
-                                loan_acc.save()
+                                loan_acc.outstanding_balance -= amount
                                 success_count += 1
+
+                            loan_acc.save()
 
                 except Exception as e:
                     error_count += 1
@@ -374,9 +414,17 @@ class CombinedBulkUploadView(generics.CreateAPIView):
                 "log_reference": log.reference_prefix,
                 "cloudinary_url": log.cloudinary_url,
             },
-            status=201 if success_count else 400,
+            status=(
+                status.HTTP_201_CREATED
+                if success_count
+                else status.HTTP_400_BAD_REQUEST
+            ),
         )
 
+
+# =================================================================================================
+# MEMBER FINANCIAL SUMMARY
+# =================================================================================================
 
 class MemberYearlySummaryView(APIView):
     """

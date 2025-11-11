@@ -51,7 +51,6 @@ class AccountSerializer(serializers.ModelSerializer):
         )
 
     def get_loan_accounts(self, obj):
-        # This is the output field — map from `obj.loans`
         return obj.loans.values_list(
             "account_number",
             "loan_type__name",
@@ -59,13 +58,19 @@ class AccountSerializer(serializers.ModelSerializer):
         )
 
     def get_loan_interest(self, obj):
-        return TamarindLoanInterest.objects.filter(
-            loan_account__member=obj
-        ).values_list(
-            "amount",
-            "loan_account__account_number",
-            "loan_account__outstanding_balance",
-            "created_at",
+        """
+        Returns: (amount, loan_account_number, loan_type_name, created_at)
+        """
+        return (
+            TamarindLoanInterest.objects.filter(loan_account__member=obj)
+            .select_related("loan_account__loan_type")
+            .values_list(
+                "amount",
+                "loan_account__account_number",
+                "loan_account__loan_type__name",
+                "created_at",
+            )
+            .order_by("-created_at")
         )
 
     def get_loan_disbursements(self, obj):
@@ -94,6 +99,10 @@ class AccountSerializer(serializers.ModelSerializer):
 
     def get_member_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
+
+
+class BulkUploadSerializer(serializers.Serializer):
+    file = serializers.FileField()
 
 
 class MemberTransactionSerializer(serializers.Serializer):
