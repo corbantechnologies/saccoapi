@@ -10,6 +10,8 @@ from venturedeposits.models import VentureDeposit
 from venturepayments.models import VenturePayment
 from savingswithdrawals.models import SavingsWithdrawal
 from savingsdeposits.models import SavingsDeposit
+from loandisbursements.models import LoanDisbursement
+from loanrepayments.models import LoanRepayment
 
 User = get_user_model()
 
@@ -17,8 +19,12 @@ User = get_user_model()
 class AccountSerializer(serializers.ModelSerializer):
     savings_accounts = serializers.SerializerMethodField()
     venture_accounts = serializers.SerializerMethodField()
-    loan_accounts = serializers.SerializerMethodField()
+    loan_accounts = (
+        serializers.SerializerMethodField()
+    )  # ← Still use this name in output
     loan_interest = serializers.SerializerMethodField()
+    loan_disbursements = serializers.SerializerMethodField()
+    loan_repayments = serializers.SerializerMethodField()
     member_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -27,54 +33,67 @@ class AccountSerializer(serializers.ModelSerializer):
             "member_no",
             "member_name",
             "savings_accounts",
-            "loan_accounts",
-            "loan_interest",
             "venture_accounts",
+            "loan_accounts",  # ← Output field
+            "loan_interest",
+            "loan_disbursements",
+            "loan_repayments",
         )
 
     def get_savings_accounts(self, obj):
-        # fetch the saving type, account number, balance
-        return (
-            SavingsAccount.objects.filter(member=obj)
-            .values_list("account_number", "account_type__name", "balance")
-            .all()
+        return SavingsAccount.objects.filter(member=obj).values_list(
+            "account_number", "account_type__name", "balance"
         )
 
     def get_venture_accounts(self, obj):
-
-        return (
-            VentureAccount.objects.filter(member=obj)
-            .values_list("account_number", "venture_type__name", "balance")
-            .all()
+        return VentureAccount.objects.filter(member=obj).values_list(
+            "account_number", "venture_type__name", "balance"
         )
 
     def get_loan_accounts(self, obj):
-
-        return (
-            LoanAccount.objects.filter(member=obj)
-            .values_list(
-                "account_number",
-                "loan_type__name",
-                "outstanding_balance",
-                "loan_amount",
-            )
-            .all()
+        # This is the output field — map from `obj.loans`
+        return obj.loans.values_list(
+            "account_number",
+            "loan_type__name",
+            "outstanding_balance",
         )
 
     def get_loan_interest(self, obj):
+        return TamarindLoanInterest.objects.filter(
+            loan_account__member=obj
+        ).values_list(
+            "amount",
+            "loan_account__account_number",
+            "loan_account__outstanding_balance",
+            "created_at",
+        )
 
+    def get_loan_disbursements(self, obj):
         return (
-            TamarindLoanInterest.objects.filter(loan_account__member=obj)
+            LoanDisbursement.objects.filter(loan_account__member=obj)
             .values_list(
                 "amount",
                 "loan_account__account_number",
-                "loan_account__outstanding_balance",
+                "loan_account__loan_type__name",
+                "created_at",
             )
-            .all()
+            .order_by("-created_at")
+        )
+
+    def get_loan_repayments(self, obj):
+        return (
+            LoanRepayment.objects.filter(loan_account__member=obj)
+            .values_list(
+                "amount",
+                "loan_account__account_number",
+                "loan_account__loan_type__name",
+                "created_at",
+            )
+            .order_by("-created_at")
         )
 
     def get_member_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}"
+        return f"{obj.first_name} {obj.last_name}".strip()
 
 
 class MemberTransactionSerializer(serializers.Serializer):

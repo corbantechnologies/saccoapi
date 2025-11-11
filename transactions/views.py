@@ -25,16 +25,11 @@ from savings.models import SavingsType
 from ventures.models import VentureType
 from transactions.serializers import (
     AccountSerializer,
-    MemberTransactionSerializer,
     MonthlySummarySerializer,
 )
 from transactions.models import DownloadLog, BulkTransactionLog
-from savings.serializers import SavingsDepositSerializer
-from venturepayments.serializers import VenturePaymentSerializer
-from venturedeposits.serializers import VentureDepositSerializer
 from accounts.permissions import IsSystemAdminOrReadOnly
 from loantypes.models import LoanType
-from savingswithdrawals.models import SavingsWithdrawal
 from savingsdeposits.models import SavingsDeposit
 from venturepayments.models import VenturePayment
 from venturedeposits.models import VentureDeposit
@@ -43,6 +38,7 @@ from loans.models import LoanAccount
 from loanrepayments.models import LoanRepayment
 from loanintereststamarind.models import TamarindLoanInterest
 from loandisbursements.models import LoanDisbursement
+from savings.models import SavingsAccount
 
 
 logger = logging.getLogger(__name__)
@@ -80,10 +76,13 @@ class AccountListDownloadView(generics.ListAPIView):
     permission_classes = (IsAuthenticated,)
 
     def get_queryset(self):
-        return (
-            User.objects.all()
-            .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts", "loans")
+        return User.objects.filter(is_member=True).prefetch_related(
+            "savings_accounts",
+            "venture_accounts",
+            "loans",
+            "loans__loan_disbursements",
+            "loans__repayments",
+            "loans__loan_interests",
         )
 
     def get(self, request, *args, **kwargs):
@@ -91,18 +90,17 @@ class AccountListDownloadView(generics.ListAPIView):
             request.query_params.get("interest_only", "false").lower() == "true"
         )
 
-        # Get savings, venture, and loan types
-        savings_types = SavingsType.objects.values_list("name", flat=True)
-        venture_types = VentureType.objects.values_list("name", flat=True)
-        loan_types = LoanType.objects.values_list("name", flat=True)
+        savings_types = list(SavingsType.objects.values_list("name", flat=True))
+        venture_types = list(VentureType.objects.values_list("name", flat=True))
+        loan_types = list(LoanType.objects.values_list("name", flat=True))
 
-        # Serialize data
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-        data = serializer.data  # Directly use serializer.data (ReturnList)
+        data = serializer.data
+
+        buffer = io.StringIO()
 
         if interest_only:
-            # Interest-only CSV
             headers = [
                 "Member Number",
                 "Member Name",
@@ -110,42 +108,48 @@ class AccountListDownloadView(generics.ListAPIView):
                 "Loan Type",
                 "Interest Amount",
                 "Outstanding Balance",
+                "Date",
             ]
-            buffer = io.StringIO()
             writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
             writer.writeheader()
 
             for user in data:
-                for amount, acc_no, outstanding_balance in user["loan_interest"]:
+                for amount, acc_no, out_bal, date in user["loan_interest"]:
+                    # Find loan type
                     loan_type = ""
-                    for acc in user["loan_accounts"]:
-                        if acc[0] == acc_no:
-                            loan_type = acc[1]
+                    for la_acc_no, la_type, _ in user["loan_accounts"]:
+                        if la_acc_no == acc_no:
+                            loan_type = la_type
                             break
-                    if loan_type:
-                        row = {
+                    writer.writerow(
+                        {
                             "Member Number": user["member_no"],
                             "Member Name": user["member_name"],
                             "Loan Account": acc_no,
                             "Loan Type": loan_type,
                             "Interest Amount": f"{amount:.2f}",
-                            "Outstanding Balance": f"{outstanding_balance:.2f}",
+                            "Outstanding Balance": f"{out_bal:.2f}",
+                            "Date": date.strftime("%Y-%m-%d") if date else "",
                         }
-                        writer.writerow(row)
+                    )
 
-            file_name = f"interest_transactions_{datetime.now().strftime('%Y%m%d')}.csv"
+            file_name = f"interest_transactions_{datetime.now():%Y%m%d}.csv"
             cloudinary_path = f"interest_transactions/{file_name}"
-        else:
-            # Main account list CSV
-            headers = ["Member Number", "Member Name"]
-            for stype in savings_types:
-                headers.extend([f"{stype} Account", f"{stype} Balance"])
-            for vtype in venture_types:
-                headers.extend([f"{vtype} Account", f"{vtype} Balance"])
-            for ltype in loan_types:
-                headers.extend([f"{ltype} Account", f"{ltype} Balance"])
 
-            buffer = io.StringIO()
+        else:
+            headers = ["Member Number", "Member Name"]
+            for st in savings_types:
+                headers += [f"{st} Account", f"{st} Balance"]
+            for vt in venture_types:
+                headers += [f"{vt} Account", f"{vt} Balance"]
+            for lt in loan_types:
+                headers += [
+                    f"{lt} Account",
+                    f"{lt} Outstanding",
+                    f"{lt} Total Disbursed",
+                    f"{lt} Total Repaid",
+                ]
+
             writer = csv.DictWriter(buffer, fieldnames=headers, lineterminator="\n")
             writer.writeheader()
 
@@ -154,67 +158,73 @@ class AccountListDownloadView(generics.ListAPIView):
                     "Member Number": user["member_no"],
                     "Member Name": user["member_name"],
                 }
-                for stype in savings_types:
-                    row[f"{stype} Account"] = ""
-                    row[f"{stype} Balance"] = ""
-                for vtype in venture_types:
-                    row[f"{vtype} Account"] = ""
-                    row[f"{vtype} Balance"] = ""
-                for ltype in loan_types:
-                    row[f"{ltype} Account"] = ""
-                    row[f"{ltype} Balance"] = ""
 
+                # Init empty
+                for st in savings_types:
+                    row[f"{st} Account"] = row[f"{st} Balance"] = ""
+                for vt in venture_types:
+                    row[f"{vt} Account"] = row[f"{vt} Balance"] = ""
+                for lt in loan_types:
+                    row[f"{lt} Account"] = row[f"{lt} Outstanding"] = ""
+                    row[f"{lt} Total Disbursed"] = row[f"{lt} Total Repaid"] = "0.00"
+
+                # Fill savings
                 for acc_no, acc_type, balance in user["savings_accounts"]:
                     row[f"{acc_type} Account"] = acc_no
                     row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
+                # Fill ventures
                 for acc_no, acc_type, balance in user["venture_accounts"]:
                     row[f"{acc_type} Account"] = acc_no
                     row[f"{acc_type} Balance"] = f"{balance:.2f}"
 
-                for acc_no, acc_type, outstanding_balance, _ in user["loan_accounts"]:
-                    row[f"{acc_type} Account"] = acc_no
-                    row[f"{acc_type} Balance"] = f"{outstanding_balance:.2f}"
+                # Fill loans
+                loan_totals = {
+                    lt: {"disb": 0.0, "rep": 0.0, "out": 0.0} for lt in loan_types
+                }
+
+                for acc_no, lt_name, out_bal in user["loan_accounts"]:
+                    row[f"{lt_name} Account"] = acc_no
+                    row[f"{lt_name} Outstanding"] = f"{out_bal:.2f}"
+                    loan_totals[lt_name]["out"] = float(out_bal)
+
+                # Sum disbursements
+                for amt, acc_no, lt_name, _ in user["loan_disbursements"]:
+                    if lt_name in loan_totals:
+                        loan_totals[lt_name]["disb"] += float(amt)
+
+                # Sum repayments
+                for amt, acc_no, lt_name, _ in user["loan_repayments"]:
+                    if lt_name in loan_totals:
+                        loan_totals[lt_name]["rep"] += float(amt)
+
+                # Write totals
+                for lt, t in loan_totals.items():
+                    row[f"{lt} Total Disbursed"] = f"{t['disb']:.2f}"
+                    row[f"{lt} Total Repaid"] = f"{t['rep']:.2f}"
 
                 writer.writerow(row)
 
-            file_name = f"account_list_{datetime.now().strftime('%Y%m%d')}.csv"
+            file_name = f"account_list_full_{datetime.now():%Y%m%d}.csv"
             cloudinary_path = f"account_lists/{file_name}"
 
         # Upload to Cloudinary
         buffer.seek(0)
-        try:
-            upload_result = cloudinary.uploader.upload(
-                buffer,
-                resource_type="raw",
-                public_id=cloudinary_path,
-                format="csv",
-            )
-        except Exception as e:
-            logger.error(f"Cloudinary upload failed: {str(e)}")
-            return Response(
-                {"error": "Failed to upload file to storage"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        upload_result = cloudinary.uploader.upload(
+            buffer, resource_type="raw", public_id=cloudinary_path, format="csv"
+        )
 
-        # Log the download
-        try:
-            DownloadLog.objects.create(
-                admin=request.user,
-                file_name=file_name,
-                cloudinary_url=upload_result["secure_url"],
-            )
-        except Exception as e:
-            logger.error(f"Failed to create DownloadLog: {str(e)}")
-            return Response(
-                {"error": "Failed to log download"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+        # Log
+        DownloadLog.objects.create(
+            admin=request.user,
+            file_name=file_name,
+            cloudinary_url=upload_result["secure_url"],
+        )
 
-        # Prepare response
+        # Return CSV
         buffer.seek(0)
         response = StreamingHttpResponse(buffer, content_type="text/csv")
-        response["Content-Disposition"] = f"attachment; filename={file_name}"
+        response["Content-Disposition"] = f'attachment; filename="{file_name}"'
         return response
 
 
@@ -224,57 +234,36 @@ class CombinedBulkUploadView(generics.CreateAPIView):
     def post(self, request, *args, **kwargs):
         file = request.FILES.get("file")
         if not file:
-            return Response(
-                {"error": "No file uploaded."}, status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "No file uploaded."}, status=400)
 
-        # Read CSV
-        try:
-            csv_content = file.read().decode("utf-8")
-            csv_file = io.StringIO(csv_content)
-            reader = csv.DictReader(csv_file)
-        except Exception as e:
-            return Response(
-                {"error": f"Invalid CSV file: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        csv_content = file.read().decode("utf-8")
+        csv_file = io.StringIO(csv_content)
+        reader = csv.DictReader(csv_file)
 
-        # Get types for validation
-        savings_types = SavingsType.objects.all().values_list("name", flat=True)
-        venture_types = VentureType.objects.all().values_list("name", flat=True)
+        # Load types
+        savings_types = list(SavingsType.objects.values_list("name", flat=True))
+        venture_types = list(VentureType.objects.values_list("name", flat=True))
+        loan_types = list(LoanType.objects.values_list("name", flat=True))
 
-        # Validate CSV columns
-        required_savings_columns = [f"{stype} Account" for stype in savings_types] + [
-            f"{stype} Amount" for stype in savings_types
-        ]
-        required_venture_columns = (
-            [f"{vtype} Account" for vtype in venture_types]
-            + [f"{vtype} Amount" for vtype in venture_types]
-            + [f"{vtype} Payment Amount" for vtype in venture_types]
+        # Validate columns
+        required_cols = (
+            [f"{t} Account" for t in savings_types + venture_types + loan_types]
+            + [f"{t} Amount" for t in savings_types + venture_types]
+            + [f"{t} Payment Amount" for t in venture_types]
+            + [f"{t} Repayment Amount" for t in loan_types]
+            + [f"{t} Disbursement Amount" for t in loan_types]
         )
-        if not any(
-            col in reader.fieldnames
-            for col in required_savings_columns + required_venture_columns
-        ):
-            return Response(
-                {
-                    "error": "CSV must include at least one valid column pair (e.g., 'Members Contribution Account', 'Members Contribution Amount' or 'Venture A Account', 'Venture A Amount'/'Venture A Payment Amount')."
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        if not any(col in reader.fieldnames for col in required_cols):
+            return Response({"error": "CSV must include valid columns."}, status=400)
 
         admin = request.user
         today = date.today()
-        date_str = today.strftime("%Y%m%d")
-        prefix = f"COMBINED-BULK-{date_str}"
+        prefix = f"COMBINED-BULK-{today:%Y%m%d}"
 
-        # Initialize log
         log = BulkTransactionLog.objects.create(
             admin=admin,
-            transaction_type="Combined Bulk Updates",
+            transaction_type="Combined Bulk",
             reference_prefix=prefix,
-            success_count=0,
-            error_count=0,
             file_name=file.name,
         )
 
@@ -289,149 +278,103 @@ class CombinedBulkUploadView(generics.CreateAPIView):
         log.cloudinary_url = upload_result["secure_url"]
         log.save()
 
-        success_count = 0
-        error_count = 0
+        success_count = error_count = 0
         errors = []
 
         with transaction.atomic():
-            for index, row in enumerate(reader, 1):
+            for idx, row in enumerate(reader, 1):
                 try:
-                    # Process savings deposits
-                    for stype in savings_types:
-                        amount_key = f"{stype} Amount"
-                        account_key = f"{stype} Account"
-                        if amount_key in row and row[amount_key] and row[account_key]:
-                            amount = float(row[amount_key])
-                            if amount < Decimal("0.01"):
-                                raise ValueError(f"{amount_key} must be greater than 0")
-                            deposit_data = {
-                                "savings_account": row[account_key],
-                                "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                                "deposit_type": "Individual Deposit",
-                                "currency": "KES",
-                                "transaction_status": "Completed",
-                                "is_active": True,
-                            }
-                            deposit_serializer = SavingsDepositSerializer(
-                                data=deposit_data
-                            )
-                            if deposit_serializer.is_valid():
-                                deposit = deposit_serializer.save(deposited_by=admin)
-                                success_count += 1
-                                account_owner = deposit.savings_account.member
-                                # if account_owner.email:
-                                #     send_deposit_made_email(account_owner, deposit)
-                            else:
-                                error_count += 1
-                                errors.append(
-                                    {
-                                        "row": index,
-                                        "account": row[account_key],
-                                        "error": str(deposit_serializer.errors),
-                                    }
-                                )
-
-                    # Process venture deposits
-                    for vtype in venture_types:
-                        amount_key = f"{vtype} Amount"
-                        account_key = f"{vtype} Account"
-                        if amount_key in row and row[amount_key] and row[account_key]:
-                            amount = float(row[amount_key])
-                            if amount < Decimal("0.01"):
-                                raise ValueError(f"{amount_key} must be greater than 0")
-                            deposit_data = {
-                                "venture_account": row[account_key],
-                                "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                            }
-                            deposit_serializer = VentureDepositSerializer(
-                                data=deposit_data
-                            )
-                            if deposit_serializer.is_valid():
-                                deposit = deposit_serializer.save(deposited_by=admin)
-                                success_count += 1
-                                account_owner = deposit.venture_account.member
-                                # if account_owner.email:
-                                #     send_venture_deposit_made_email(account_owner, deposit)
-                            else:
-                                error_count += 1
-                                errors.append(
-                                    {
-                                        "row": index,
-                                        "account": row[account_key],
-                                        "error": str(deposit_serializer.errors),
-                                    }
-                                )
-
-                    # Process venture payments
-                    for vtype in venture_types:
-                        payment_key = f"{vtype} Payment Amount"
-                        account_key = f"{vtype} Account"
-                        if payment_key in row and row[payment_key] and row[account_key]:
-                            amount = float(row[payment_key])
-                            if amount < Decimal("0.01"):
-                                raise ValueError(
-                                    f"{payment_key} must be greater than 0"
-                                )
-                            payment_data = {
-                                "venture_account": row[account_key],
-                                "amount": amount,
-                                "payment_method": row.get("Payment Method", "Cash"),
-                                "payment_type": row.get(
-                                    "Payment Type", "Individual Settlement"
+                    # === SAVINGS ===
+                    for st in savings_types:
+                        acc_key = f"{st} Account"
+                        amt_key = f"{st} Amount"
+                        if row.get(acc_key) and row.get(amt_key):
+                            amount = Decimal(row[amt_key])
+                            if amount <= 0:
+                                raise ValueError("Amount > 0")
+                            SavingsDeposit.objects.create(
+                                savings_account=SavingsAccount.objects.get(
+                                    account_number=row[acc_key]
                                 ),
-                                "transaction_status": "Completed",
-                            }
-                            payment_serializer = VenturePaymentSerializer(
-                                data=payment_data
+                                amount=amount,
+                                deposited_by=admin,
+                                payment_method="Cash",
+                                transaction_status="Completed",
                             )
-                            if payment_serializer.is_valid():
-                                payment = payment_serializer.save(paid_by=admin)
-                                success_count += 1
-                                account_owner = payment.venture_account.member
-                                # if account_owner.email:
-                                #     send_venture_payment_confirmation_email(account_owner, payment)
-                            else:
-                                error_count += 1
-                                errors.append(
-                                    {
-                                        "row": index,
-                                        "account": row[account_key],
-                                        "error": str(payment_serializer.errors),
-                                    }
+                            success_count += 1
+
+                    # === VENTURES ===
+                    for vt in venture_types:
+                        acc_key = f"{vt} Account"
+                        dep_key = f"{vt} Amount"
+                        pay_key = f"{vt} Payment Amount"
+                        if row.get(acc_key):
+                            if row.get(dep_key):
+                                VentureDeposit.objects.create(
+                                    venture_account=VentureAccount.objects.get(
+                                        account_number=row[acc_key]
+                                    ),
+                                    amount=Decimal(row[dep_key]),
+                                    deposited_by=admin,
                                 )
+                                success_count += 1
+                            if row.get(pay_key):
+                                VenturePayment.objects.create(
+                                    venture_account=VentureAccount.objects.get(
+                                        account_number=row[acc_key]
+                                    ),
+                                    amount=Decimal(row[pay_key]),
+                                    paid_by=admin,
+                                )
+                                success_count += 1
+
+                    # === LOANS ===
+                    for lt in loan_types:
+                        acc_key = f"{lt} Account"
+                        disb_key = f"{lt} Disbursement Amount"
+                        rep_key = f"{lt} Repayment Amount"
+                        if row.get(acc_key):
+                            loan_acc = LoanAccount.objects.get(
+                                account_number=row[acc_key]
+                            )
+                            if row.get(disb_key):
+                                LoanDisbursement.objects.create(
+                                    loan_account=loan_acc,
+                                    amount=Decimal(row[disb_key]),
+                                    disbursed_by=admin,
+                                    transaction_status="Completed",
+                                )
+                                loan_acc.outstanding_balance += Decimal(row[disb_key])
+                                loan_acc.save()
+                                success_count += 1
+                            if row.get(rep_key):
+                                LoanRepayment.objects.create(
+                                    loan_account=loan_acc,
+                                    amount=Decimal(row[rep_key]),
+                                    paid_by=admin,
+                                    transaction_status="Completed",
+                                )
+                                loan_acc.outstanding_balance -= Decimal(row[rep_key])
+                                loan_acc.save()
+                                success_count += 1
 
                 except Exception as e:
                     error_count += 1
-                    errors.append({"row": index, "error": str(e)})
+                    errors.append({"row": idx, "error": str(e)})
 
-            # Update log
-            try:
-                log.success_count = success_count
-                log.error_count = error_count
-                log.save()
-            except Exception as e:
-                logger.error(f"Failed to update BulkTransactionLog: {str(e)}")
-                return Response(
-                    {"error": "Failed to update transaction log"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
+        log.success_count = success_count
+        log.error_count = error_count
+        log.save()
 
-        response_data = {
-            "success_count": success_count,
-            "error_count": error_count,
-            "errors": errors,
-            "log_reference": log.reference_prefix,
-            "cloudinary_url": log.cloudinary_url,
-        }
         return Response(
-            response_data,
-            status=(
-                status.HTTP_201_CREATED
-                if success_count > 0
-                else status.HTTP_400_BAD_REQUEST
-            ),
+            {
+                "success_count": success_count,
+                "error_count": error_count,
+                "errors": errors,
+                "log_reference": log.reference_prefix,
+                "cloudinary_url": log.cloudinary_url,
+            },
+            status=201 if success_count else 400,
         )
 
 
