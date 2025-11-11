@@ -1,9 +1,13 @@
 import csv
 import io
+import asyncio
 import cloudinary.uploader
 import logging
 import calendar
+from playwright.async_api import async_playwright
 from datetime import date
+from django.http import HttpResponse
+from django.template.loader import render_to_string
 from django.db import transaction
 from decimal import Decimal
 from rest_framework.response import Response
@@ -19,7 +23,11 @@ from rest_framework.views import APIView
 
 from savings.models import SavingsType
 from ventures.models import VentureType
-from transactions.serializers import AccountSerializer, MemberTransactionSerializer, MonthlySummarySerializer
+from transactions.serializers import (
+    AccountSerializer,
+    MemberTransactionSerializer,
+    MonthlySummarySerializer,
+)
 from transactions.models import DownloadLog, BulkTransactionLog
 from savings.serializers import SavingsDepositSerializer
 from venturepayments.serializers import VenturePaymentSerializer
@@ -755,3 +763,97 @@ class MemberYearlySummaryView(APIView):
         }
 
         return Response(response_data, status=status.HTTP_200_OK)
+
+
+# =====================================================================
+# PDF GENERATION
+# =====================================================================
+
+
+# ------------------------------------------------------------------
+# Async PDF Generator (Playwright)
+# ------------------------------------------------------------------
+async def generate_pdf(html_content: str, logo_url: str):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+
+        # Inject logo URL into page context
+        await page.add_init_script(f"window.LOGO_URL = '{logo_url}';")
+
+        # Set full HTML
+        await page.set_content(html_content, wait_until="networkidle")
+
+        # Generate PDF with header/footer
+        pdf_bytes = await page.pdf(
+            format="A4",
+            print_background=True,
+            margin={"top": "1.2cm", "bottom": "1.2cm", "left": "1cm", "right": "1cm"},
+            display_header_footer=True,
+            header_template="""
+                <div style="font-size:10px; text-align:center; width:100%; padding:8px 0; border-bottom:1px solid #eee;">
+                    <strong>Wananchi Mali SACCO</strong>
+                </div>
+            """,
+            footer_template="""
+                <div style="font-size:9px; text-align:center; width:100%; padding:5px 0; border-top:1px solid #eee; color:#666;">
+                    Page <span class="pageNumber"></span> of <span class="totalPages"></span> 
+                    | Generated on {{ generated_at }}
+                </div>
+            """.replace(
+                "{{ generated_at }}", datetime.now().strftime("%d %B %Y")
+            ),
+        )
+        await browser.close()
+        return pdf_bytes
+
+
+class MemberYearlySummaryPDFView(APIView):
+    """
+    Download member yearly financial summary as PDF.
+    Uses Cloudinary logo: https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png
+    """
+
+    def get(self, request, member_no):
+        year = int(request.query_params.get("year", datetime.now().year))
+
+        try:
+            member = User.objects.get(member_no=member_no, is_member=True)
+        except User.DoesNotExist:
+            return Response({"error": "Member not found"}, status=404)
+
+        # Reuse JSON view data
+        from .views import MemberYearlySummaryView
+
+        json_view = MemberYearlySummaryView()
+        json_view.request = request
+        data = json_view.get(request, member_no).data
+
+        # Cloudinary logo URL
+        logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
+
+        # Render HTML with logo
+        html_string = render_to_string(
+            "yearly_summary_pdf.html",
+            {
+                "data": data,
+                "member": member,
+                "year": year,
+                "logo_url": logo_url,
+                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+            },
+        )
+
+        # Generate PDF
+        try:
+            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url))
+        except Exception as e:
+            logger.error(f"PDF generation failed for {member_no}: {e}")
+            return Response({"error": "Failed to generate PDF"}, status=500)
+
+        # Return download
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
+        )
+        return response

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <meta charset="utf-8">
+        <title>{{ member.member_no }} - Financial Summary {{ year }}</title>
+        <style>
+            body {
+                font-family: 'Segoe UI', Tahoma, sans-serif;
+                color: #333;
+                line-height: 1.6;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 20px;
+            }
+
+            .header {
+                text-align: center;
+                margin-bottom: 30px;
+                padding-bottom: 15px;
+                border-bottom: 3px solid #1e40af;
+            }
+
+            .logo {
+                height: 70px;
+                margin-bottom: 12px;
+            }
+
+            .title {
+                margin: 0;
+                font-size: 24px;
+                color: #1e40af;
+            }
+
+            .subtitle {
+                margin: 8px 0 0;
+                font-size: 14px;
+                color: #666;
+            }
+
+            .info-box {
+                background: #f8f9fa;
+                padding: 16px;
+                border-radius: 8px;
+                margin: 20px 0;
+                display: flex;
+                justify-content: space-between;
+                flex-wrap: wrap;
+            }
+
+            .info-box div {
+                margin: 5px 0;
+            }
+
+            .info-label {
+                font-weight: 600;
+                color: #1e40af;
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-size: 14px;
+            }
+
+            th {
+                background: #1e40af;
+                color: white;
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+                font-size: 13px;
+            }
+
+            td {
+                padding: 10px 12px;
+                border-bottom: 1px solid #eee;
+            }
+
+            .total-row td {
+                background: #f0f7ff;
+                font-weight: bold;
+            }
+
+            .section {
+                margin-top: 30px;
+                page-break-inside: avoid;
+            }
+
+            .section h3 {
+                color: #1e40af;
+                border-bottom: 2px solid #3b82f6;
+                padding-bottom: 8px;
+            }
+
+            .footer {
+                margin-top: 50px;
+                text-align: center;
+                font-size: 10px;
+                color: #888;
+                border-top: 1px solid #eee;
+                padding-top: 15px;
+            }
+
+            @media print {
+                body {
+                    -webkit-print-color-adjust: exact;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+
+        <div class="container">
+
+            <!-- Header -->
+            <div class="header">
+                <img src="{{ logo_url }}" alt="Tamarind SACCO" class="logo">
+                <h1 class="title">Member Financial Summary</h1>
+                <p class="subtitle">Year: {{ year }} | Generated: {{ generated_at }}</p>
+            </div>
+
+            <!-- Member Info -->
+            <div class="info-box">
+                <div><span class="info-label">Member No:</span> {{ member.member_no }}</div>
+                <div><span class="info-label">Name:</span> {{ member.get_full_name }}</div>
+                <div><span class="info-label">Email:</span> {{ member.email|default:"N/A" }}</div>
+                <div><span class="info-label">Phone:</span> {{ member.phone|default:"N/A" }}</div>
+            </div>
+
+            <!-- Yearly Summary -->
+            <div class="section">
+                <h3>Yearly Summary</h3>
+                <table>
+                    <tr>
+                        <th>Category</th>
+                        <th>Amount (KES)</th>
+                    </tr>
+                    <tr>
+                        <td>Total Savings</td>
+                        <td class="total-row">{{ data.summary.total_savings|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Venture Deposits</td>
+                        <td>{{ data.summary.total_venture_deposits|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Venture Payments</td>
+                        <td>{{ data.summary.total_venture_payments|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Net Ventures</td>
+                        <td class="total-row">{{ data.summary.total_ventures_net|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Loans Disbursed</td>
+                        <td>{{ data.summary.total_loans_disbursed|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Loans Repaid</td>
+                        <td>{{ data.summary.total_loans_repaid|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Interest Charged</td>
+                        <td>{{ data.summary.total_interest_charged|floatformat:2 }}</td>
+                    </tr>
+                    <tr>
+                        <td>Outstanding Loans</td>
+                        <td class="total-row">{{ data.summary.total_loans_outstanding|floatformat:2 }}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                <p>© {{ year }} Tamarind SACCO | All rights reserved | Confidential Document</p>
+                <p>For inquiries: <a href="mailto:finance@wananchimali.com">finance@wananchimali.com</a></p>
+            </div>
+
+        </div>
+    </body>
+
+</html>
