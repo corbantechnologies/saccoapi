@@ -768,6 +768,39 @@ class MemberYearlySummaryView(APIView):
             final_cum_out[name] = max(disb - rep, Decimal("0"))
         total_loan_out = sum(final_cum_out.values())
 
+        # === EXTRACT DECEMBER'S CARRIED FORWARD ===
+        december_entry = next(
+            (m for m in monthly_summary if "December" in m["month"]), None
+        )
+        year_end_balances = {
+            "savings": {},
+            "ventures": {},
+            "loans": {},
+        }
+
+        if december_entry:
+            for item in december_entry["savings"]["by_type"]:
+                year_end_balances["savings"][item["type"]] = item[
+                    "balance_carried_forward"
+                ]
+            for item in december_entry["ventures"]["by_type"]:
+                year_end_balances["ventures"][item["venture_type"]] = item[
+                    "balance_carried_forward"
+                ]
+            for item in december_entry["loans"]["by_type"]:
+                year_end_balances["loans"][item["loan_type"]] = item[
+                    "balance_carried_forward"
+                ]
+        else:
+            for name in all_savings_types.keys():
+                year_end_balances["savings"][name] = float(running["savings"][name])
+            for name in all_venture_types.keys():
+                year_end_balances["ventures"][name] = float(
+                    running["venture_net"][name]
+                )
+            for name in all_loan_types.keys():
+                year_end_balances["loans"][name] = float(running["loan_out"][name])
+
         # === CHART OF ACCOUNTS ===
         chart_of_accounts = {
             "total_savings": float(total_savings),
@@ -819,6 +852,11 @@ class MemberYearlySummaryView(APIView):
                     "total_loans_repaid": float(total_loan_rep),
                     "total_interest_charged": float(total_loan_int),
                     "total_loans_outstanding": float(total_loan_out),
+                },
+                "year_end_balances": {
+                    "savings": year_end_balances["savings"],
+                    "ventures": year_end_balances["ventures"],
+                    "loans": year_end_balances["loans"],
                 },
                 "monthly_summary": monthly_summary,
                 "chart_of_accounts": chart_of_accounts,
