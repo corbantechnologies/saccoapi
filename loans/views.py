@@ -15,10 +15,10 @@ class LoanAccountListCreateView(generics.ListCreateAPIView):
     ]
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save(member=self.request.user)
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user).prefetch_related(
+        return self.queryset.filter(member=self.request.user).prefetch_related(
             "repayments", "loan_disbursements", "loan_interests"
         )
 
@@ -32,6 +32,6 @@ class LoanAccountDetailView(generics.RetrieveAPIView):
     lookup_field = "identity"
 
     def get_queryset(self):
-        return self.queryset.filter(user=self.request.user).prefetch_related(
+        return self.queryset.filter(member=self.request.user).prefetch_related(
             "repayments", "loan_disbursements", "loan_interests"
         )

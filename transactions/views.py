@@ -7,6 +7,7 @@ import calendar
 from playwright.async_api import async_playwright
 from datetime import date
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.db import transaction
 from decimal import Decimal
@@ -20,6 +21,7 @@ from collections import defaultdict
 from django.db.models import Sum, Case, When, DecimalField, F
 from django.db.models.functions import ExtractMonth, ExtractYear
 from rest_framework.views import APIView
+
 
 from savings.models import SavingsType
 from ventures.models import VentureType
@@ -240,7 +242,7 @@ class AccountListDownloadView(generics.ListAPIView):
 
 
 class CombinedBulkUploadView(generics.CreateAPIView):
-    serializer_class = BulkUploadSerializer  # ← REQUIRED!
+    serializer_class = BulkUploadSerializer
     permission_classes = [IsSystemAdminOrReadOnly]
 
     def post(self, request, *args, **kwargs):
@@ -426,34 +428,22 @@ class CombinedBulkUploadView(generics.CreateAPIView):
 # MEMBER FINANCIAL SUMMARY
 # =================================================================================================
 
+
 class MemberYearlySummaryView(APIView):
     """
-    Member financial summary with exact JSON structure.
-    - monthly_summary: list of months with by_type as list of objects
-    - chart_of_accounts: yearly only, by_type as list
+    Returns yearly + monthly financial summary with CORRECT month-end loan balances.
     """
 
     def get(self, request, member_no):
         year = int(request.query_params.get("year", datetime.now().year))
+        member = get_object_or_404(User, member_no=member_no, is_member=True)
 
-        try:
-            member = User.objects.get(member_no=member_no, is_member=True)
-        except User.DoesNotExist:
-            return Response(
-                {"error": "Member not found"}, status=status.HTTP_404_NOT_FOUND
-            )
-
-        # ------------------------------------------------------------------
-        # 1. PRE-LOAD ALL TYPES
-        # ------------------------------------------------------------------
+        # Pre-load all types as dict: {name: model}
         all_savings_types = {t.name: t for t in SavingsType.objects.all()}
         all_venture_types = {t.name: t for t in VentureType.objects.all()}
         all_loan_types = {t.name: t for t in LoanType.objects.all()}
 
-        # ------------------------------------------------------------------
-        # 2. YEARLY + MONTHLY AGGREGATES
-        # ------------------------------------------------------------------
-        monthly_summary = []
+        # Year-level accumulators
         yearly = {
             "savings": defaultdict(Decimal),
             "vent_dep": defaultdict(Decimal),
@@ -461,14 +451,16 @@ class MemberYearlySummaryView(APIView):
             "loan_disb": defaultdict(Decimal),
             "loan_rep": defaultdict(Decimal),
             "loan_int": defaultdict(Decimal),
-            "loan_out": defaultdict(Decimal),
         }
 
+        monthly_summary = []
+
+        # Loop through each month
         for month in range(1, 13):
             month_name = calendar.month_name[month]
             month_key = f"{month_name} {year}"
 
-            # ---- SAVINGS ----
+            # === SAVINGS ===
             savings_deps = SavingsDeposit.objects.filter(
                 savings_account__member=member,
                 created_at__year=year,
@@ -476,25 +468,22 @@ class MemberYearlySummaryView(APIView):
             ).select_related("savings_account__account_type")
 
             savings_by_type = defaultdict(
-                lambda: {"total": Decimal("0.00"), "deposits": []}
+                lambda: {"total": Decimal("0"), "deposits": []}
             )
             for dep in savings_deps:
                 stype = dep.savings_account.account_type.name
                 amount = Decimal(str(dep.amount))
                 savings_by_type[stype]["total"] += amount
-                yearly["savings"][stype] += amount
                 savings_by_type[stype]["deposits"].append(
-                    {
-                        "type": stype,
-                        "amount": float(amount),
-                    }
+                    {"type": stype, "amount": float(amount)}
                 )
+                yearly["savings"][stype] += amount
 
-            # Fill missing types
             savings_list = []
-            for name, obj in all_savings_types.items():
+            total_savings_month = Decimal("0")
+            for name in all_savings_types.keys():  # Use .keys()
                 data = savings_by_type.get(
-                    name, {"total": Decimal("0.00"), "deposits": []}
+                    name, {"total": Decimal("0"), "deposits": []}
                 )
                 savings_list.append(
                     {
@@ -503,10 +492,9 @@ class MemberYearlySummaryView(APIView):
                         "deposits": data["deposits"],
                     }
                 )
+                total_savings_month += data["total"]
 
-            total_savings_month = sum(item["amount"] for item in savings_list)
-
-            # ---- VENTURES ----
+            # === VENTURES ===
             vent_deps = VentureDeposit.objects.filter(
                 venture_account__member=member,
                 created_at__year=year,
@@ -520,34 +508,32 @@ class MemberYearlySummaryView(APIView):
             ).select_related("venture_account__venture_type")
 
             vent_by_type = defaultdict(lambda: {"deposits": [], "payments": []})
+            month_vent_dep = Decimal("0")
+            month_vent_pay = Decimal("0")
+
             for dep in vent_deps:
                 vtype = dep.venture_account.venture_type.name
                 amount = Decimal(str(dep.amount))
                 vent_by_type[vtype]["deposits"].append(
-                    {
-                        "venture_type": vtype,
-                        "amount": float(amount),
-                    }
+                    {"venture_type": vtype, "amount": float(amount)}
                 )
+                month_vent_dep += amount
                 yearly["vent_dep"][vtype] += amount
 
             for pay in vent_pays:
                 vtype = pay.venture_account.venture_type.name
                 amount = Decimal(str(pay.amount))
                 vent_by_type[vtype]["payments"].append(
-                    {
-                        "venture_type": vtype,
-                        "amount": float(amount),
-                    }
+                    {"venture_type": vtype, "amount": float(amount)}
                 )
+                month_vent_pay += amount
                 yearly["vent_pay"][vtype] += amount
 
-            # Fill missing
+            venture_balance = month_vent_dep - month_vent_pay
+
             ventures_list = []
-            for name, obj in all_venture_types.items():
+            for name in all_venture_types.keys():  # Use .keys()
                 data = vent_by_type.get(name, {"deposits": [], "payments": []})
-                dep_total = sum(d["amount"] for d in data["deposits"])
-                pay_total = sum(p["amount"] for p in data["payments"])
                 ventures_list.append(
                     {
                         "venture_type": name,
@@ -556,21 +542,19 @@ class MemberYearlySummaryView(APIView):
                     }
                 )
 
-            total_vent_dep = sum(yearly["vent_dep"].values())
-            total_vent_pay = sum(yearly["vent_pay"].values())
-            net_venture = total_vent_dep - total_vent_pay
-
-            # ---- LOANS ----
+            # === LOANS: CORRECT MONTH-END BALANCE ===
             disbursements = LoanDisbursement.objects.filter(
                 loan_account__member=member,
                 created_at__year=year,
                 created_at__month=month,
+                transaction_status="Completed",
             ).select_related("loan_account__loan_type")
 
             repayments = LoanRepayment.objects.filter(
                 loan_account__member=member,
                 created_at__year=year,
                 created_at__month=month,
+                transaction_status="Completed",
             ).select_related("loan_account__loan_type")
 
             interests = TamarindLoanInterest.objects.filter(
@@ -579,112 +563,132 @@ class MemberYearlySummaryView(APIView):
                 created_at__month=month,
             ).select_related("loan_account__loan_type")
 
+            month_disb = Decimal("0")
+            month_rep = Decimal("0")
+            month_int = Decimal("0")
+
             loan_by_type = defaultdict(
-                lambda: {
-                    "disbursed": [],
-                    "repaid": [],
-                    "interest": [],
-                    "outstanding": Decimal("0.00"),
-                }
+                lambda: {"disbursed": [], "repaid": [], "interest": []}
             )
 
             for d in disbursements:
                 ltype = d.loan_account.loan_type.name
                 amount = Decimal(str(d.amount))
                 loan_by_type[ltype]["disbursed"].append(
-                    {
-                        "loan_type": ltype,
-                        "amount": float(amount),
-                    }
+                    {"loan_type": ltype, "amount": float(amount)}
                 )
+                month_disb += amount
                 yearly["loan_disb"][ltype] += amount
 
             for r in repayments:
                 ltype = r.loan_account.loan_type.name
                 amount = Decimal(str(r.amount))
-                loan_by_type[ltype]["repaid"].append(
-                    {
-                        "loan_type": ltype,
-                        "amount": float(amount),
-                    }
-                )
-                yearly["loan_rep"][ltype] += amount
+                if r.repayment_type != "Interest Payment":
+                    loan_by_type[ltype]["repaid"].append(
+                        {"loan_type": ltype, "amount": float(amount)}
+                    )
+                    month_rep += amount
+                    yearly["loan_rep"][ltype] += amount
 
             for i in interests:
                 ltype = i.loan_account.loan_type.name
                 amount = Decimal(str(i.amount))
                 loan_by_type[ltype]["interest"].append(
-                    {
-                        "loan_type": ltype,
-                        "amount": float(amount),
-                    }
+                    {"loan_type": ltype, "amount": float(amount)}
                 )
+                month_int += amount
                 yearly["loan_int"][ltype] += amount
 
-            # Outstanding balance
-            loan_accounts = LoanAccount.objects.filter(member=member).select_related(
-                "loan_type"
-            )
-            for loan in loan_accounts:
-                ltype = loan.loan_type.name
-                outstanding = Decimal(str(loan.outstanding_balance or 0))
-                loan_by_type[ltype]["outstanding"] += outstanding
-                yearly["loan_out"][ltype] += outstanding
-
-            # Build loan list
-            loans_list = []
-            for name, obj in all_loan_types.items():
-                data = loan_by_type.get(
-                    name,
-                    {
-                        "disbursed": [],
-                        "repaid": [],
-                        "interest": [],
-                        "outstanding": Decimal("0.00"),
-                    },
+            # CUMULATIVE UP TO THIS MONTH
+            cum_disb = (
+                LoanDisbursement.objects.filter(
+                    loan_account__member=member,
+                    created_at__year=year,
+                    created_at__month__lte=month,
+                    transaction_status="Completed",
                 )
+                .values("loan_account__loan_type__name")
+                .annotate(total=Sum("amount"))
+            )
+
+            cum_rep = (
+                LoanRepayment.objects.filter(
+                    loan_account__member=member,
+                    created_at__year=year,
+                    created_at__month__lte=month,
+                    transaction_status="Completed",
+                    repayment_type__in=[
+                        "Regular Repayment",
+                        "Early Settlement",
+                        "Partial Payment",
+                        "Individual Settlement",
+                    ],
+                )
+                .values("loan_account__loan_type__name")
+                .annotate(total=Sum("amount"))
+            )
+
+            cumulative_outstanding_by_type = {}
+            for type_name in all_loan_types.keys():  # FIXED
+                disbursed = sum(
+                    d["total"]
+                    for d in cum_disb
+                    if d["loan_account__loan_type__name"] == type_name
+                ) or Decimal("0")
+                repaid = sum(
+                    r["total"]
+                    for r in cum_rep
+                    if r["loan_account__loan_type__name"] == type_name
+                ) or Decimal("0")
+                cumulative_outstanding_by_type[type_name] = max(
+                    disbursed - repaid, Decimal("0")
+                )
+
+            # Build loans_list
+            loans_list = []
+            total_month_end_outstanding = Decimal("0")
+            for type_name in all_loan_types.keys():  # FIXED
+                data = loan_by_type.get(
+                    type_name, {"disbursed": [], "repaid": [], "interest": []}
+                )
+                out = cumulative_outstanding_by_type.get(type_name, Decimal("0"))
                 loans_list.append(
                     {
-                        "loan_type": name,
-                        "total_amount_outstanding": float(data["outstanding"]),
+                        "loan_type": type_name,
+                        "total_amount_outstanding": float(out),
                         "total_amount_disbursed": data["disbursed"],
                         "total_amount_repaid": data["repaid"],
                         "total_interest_charged": data["interest"],
                     }
                 )
+                total_month_end_outstanding += out
 
-            total_disb = sum(yearly["loan_disb"].values())
-            total_rep = sum(yearly["loan_rep"].values())
-            total_int = sum(yearly["loan_int"].values())
-            total_out = sum(yearly["loan_out"].values())
-
-            # ---- MONTH OBJECT ----
+            # === Build Month ===
             monthly_summary.append(
                 {
                     "month": month_key,
                     "savings": {
                         "total_savings": float(total_savings_month),
+                        "total_savings_deposits": float(total_savings_month),
                         "by_type": savings_list,
                     },
                     "ventures": {
-                        "net_venture": float(net_venture),
-                        "venture_deposits": float(total_vent_dep),
-                        "venture_payments": float(total_vent_pay),
+                        "venture_deposits": float(month_vent_dep),
+                        "venture_payments": float(month_vent_pay),
+                        "venture_balance": float(venture_balance),
                         "by_type": ventures_list,
                     },
                     "loans": {
-                        "total_loans_disbursed": float(total_disb),
-                        "total_loans_repaid": float(total_rep),
-                        "total_interest_charged": float(total_int),
-                        "total_loans_outstanding": float(total_out),
+                        "total_loans_disbursed": float(month_disb),
+                        "total_loans_repaid": float(month_rep),
+                        "total_interest_charged": float(month_int),
+                        "total_loans_outstanding": float(total_month_end_outstanding),
                         "by_type": loans_list,
                     },
                 }
             )
 
-        # ------------------------------------------------------------------
-        # 3. YEARLY TOTALS
-        # ------------------------------------------------------------------
+        # === YEARLY TOTALS ===
         total_savings = sum(yearly["savings"].values())
         total_vent_dep = sum(yearly["vent_dep"].values())
         total_vent_pay = sum(yearly["vent_pay"].values())
@@ -692,11 +696,16 @@ class MemberYearlySummaryView(APIView):
         total_loan_disb = sum(yearly["loan_disb"].values())
         total_loan_rep = sum(yearly["loan_rep"].values())
         total_loan_int = sum(yearly["loan_int"].values())
-        total_loan_out = sum(yearly["loan_out"].values())
 
-        # ------------------------------------------------------------------
-        # 4. CHART OF ACCOUNTS (YEARLY)
-        # ------------------------------------------------------------------
+        # Final year-end outstanding
+        final_cum_out = {}
+        for type_name in all_loan_types.keys():  # FIXED
+            disbursed = yearly["loan_disb"].get(type_name, Decimal("0"))
+            repaid = yearly["loan_rep"].get(type_name, Decimal("0"))
+            final_cum_out[type_name] = max(disbursed - repaid, Decimal("0"))
+        total_loan_out = sum(final_cum_out.values())
+
+        # === CHART OF ACCOUNTS ===
         chart_of_accounts = {
             "total_savings": float(total_savings),
             "total_ventures": float(total_ventures_net),
@@ -709,51 +718,50 @@ class MemberYearlySummaryView(APIView):
             "total_savings_by_type": [
                 {
                     "type": name,
-                    "amount": float(yearly["savings"].get(name, Decimal("0.00"))),
+                    "amount": float(yearly["savings"].get(name, Decimal("0"))),
                 }
-                for name in all_savings_types
+                for name in all_savings_types.keys()
             ],
             "total_ventures_by_type": [
                 {
                     "venture_type": name,
                     "net_amount": float(
-                        yearly["vent_dep"].get(name, Decimal("0.00"))
-                        - yearly["vent_pay"].get(name, Decimal("0.00"))
+                        yearly["vent_dep"].get(name, Decimal("0"))
+                        - yearly["vent_pay"].get(name, Decimal("0"))
                     ),
                 }
-                for name in all_venture_types
+                for name in all_venture_types.keys()
             ],
             "total_loans_by_type": [
                 {
-                    "loan_type": name,
+                    "loan_type": type_name,
                     "total_outstanding_amount": float(
-                        yearly["loan_out"].get(name, Decimal("0.00"))
+                        final_cum_out.get(type_name, Decimal("0"))
                     ),
                 }
-                for name in all_loan_types
+                for type_name in all_loan_types.keys()  # FIXED
             ],
         }
 
-        # ------------------------------------------------------------------
-        # 5. RESPONSE
-        # ------------------------------------------------------------------
-        response_data = {
-            "year": year,
-            "summary": {
-                "total_savings": float(total_savings),
-                "total_venture_deposits": float(total_vent_dep),
-                "total_venture_payments": float(total_vent_pay),
-                "total_ventures_net": float(total_ventures_net),
-                "total_loans_disbursed": float(total_loan_disb),
-                "total_loans_repaid": float(total_loan_rep),
-                "total_interest_charged": float(total_loan_int),
-                "total_loans_outstanding": float(total_loan_out),
+        # === FINAL RESPONSE ===
+        return Response(
+            {
+                "year": year,
+                "summary": {
+                    "total_savings": float(total_savings),
+                    "total_venture_deposits": float(total_vent_dep),
+                    "total_venture_payments": float(total_vent_pay),
+                    "total_ventures_net": float(total_ventures_net),
+                    "total_loans_disbursed": float(total_loan_disb),
+                    "total_loans_repaid": float(total_loan_rep),
+                    "total_interest_charged": float(total_loan_int),
+                    "total_loans_outstanding": float(total_loan_out),
+                },
+                "monthly_summary": monthly_summary,
+                "chart_of_accounts": chart_of_accounts,
             },
-            "monthly_summary": monthly_summary,
-            "chart_of_accounts": chart_of_accounts,
-        }
-
-        return Response(response_data, status=status.HTTP_200_OK)
+            status=status.HTTP_200_OK,
+        )
 
 
 # =====================================================================
