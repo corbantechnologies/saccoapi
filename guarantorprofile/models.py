@@ -11,7 +11,7 @@ User = get_user_model()
 
 
 class GuarantorProfile(TimeStampedModel, UniversalIdModel, ReferenceModel):
-    member = models.ForeignKey(
+    member = models.OneToOneField(
         User, on_delete=models.CASCADE, related_name="guarantor_profile"
     )
     is_eligible = models.BooleanField(default=False)
