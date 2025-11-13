@@ -7,8 +7,6 @@ class LoanType(TimeStampedModel, UniversalIdModel, ReferenceModel):
     name = models.CharField(max_length=2550, unique=True)
     description = models.TextField()
     interest_rate = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
-    # some clients want to calculate interest on their own
-    system_calculates_interest = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Loan Type"

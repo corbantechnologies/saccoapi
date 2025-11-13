@@ -11,10 +11,9 @@ from savings.models import SavingsAccount
 User = get_user_model()
 
 
-class GuarantorProfile(serializers.ModelSerializer):
+class GuarantorProfileSerializer(serializers.ModelSerializer):
     member = serializers.CharField(source="member.member_no", read_only=True)
     member_no = serializers.CharField(write_only=True)
-    is_eligible = serializers.BooleanField(default=True)
 
     active_guarantees_count = serializers.SerializerMethodField()
     committed_amount = serializers.SerializerMethodField()
@@ -78,7 +77,6 @@ class GuarantorProfile(serializers.ModelSerializer):
             member=member,
             max_guarantee_amount=total_savings,
             committed_guarantee_amount=Decimal("0"),
-            is_eligible=True,
             **validated_data,
         )
         return profile

@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     # Local apps
     "accounts",
     "guarantorprofile",
+    "guaranteerequests",
     "nextofkin",
     "verification",
     "finances",
@@ -57,6 +58,7 @@ INSTALLED_APPS = [
     "transactions",
     "loanintereststamarind",
     "loandisbursements",
+    "loanapplications",
 ]
 
 MIDDLEWARE = [

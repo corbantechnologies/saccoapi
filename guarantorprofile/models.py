@@ -1,7 +1,6 @@
 from decimal import Decimal
 from django.db import models
 from django.contrib.auth import get_user_model
-from django.utils import timezone
 
 
 from accounts.abstracts import TimeStampedModel, UniversalIdModel, ReferenceModel
@@ -47,3 +46,12 @@ class GuarantorProfile(TimeStampedModel, UniversalIdModel, ReferenceModel):
         return max(
             Decimal("0"), self.max_guarantee_amount - self.committed_guarantee_amount
         )
+
+    def active_guarantees_count(self):
+        from guaranteerequests.models import GuaranteeRequest
+
+        return GuaranteeRequest.objects.filter(
+            guarantor=self,
+            status="Accepted",
+            loan_application__status__in=["Submitted", "Approved", "Disbursed"],
+        ).count()

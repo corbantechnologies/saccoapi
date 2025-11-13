@@ -19,7 +19,6 @@ class LoanTypeSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "interest_rate",
-            "system_calculates_interest",
             "created_at",
             "updated_at",
             "reference",
