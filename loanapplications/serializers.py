@@ -58,6 +58,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "reference",
+            "loan_account",
             "projection",
         )
 
@@ -284,3 +285,13 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
 
     def get_can_submit(self, obj):
         return self.get_is_fully_covered(obj)
+
+
+class LoanStatusUpdateSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(
+        choices=LoanApplication.STATUS_CHOICES, required=True
+    )
+
+    class Meta:
+        model = LoanApplication
+        fields = ("status",)
