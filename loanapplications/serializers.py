@@ -61,9 +61,185 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
             "projection",
         )
 
-    # ----------------------------------------------------------------------
-    # Computed fields
-    # ----------------------------------------------------------------------
+    # ===================================================================
+    # 1. Allow partial updates: fill missing fields from instance
+    # ===================================================================
+    def to_internal_value(self, data):
+        mutable = data.copy()
+
+        if self.instance:
+            # Fill missing critical fields from existing instance
+            for field in [
+                "calculation_mode",
+                "product",
+                "start_date",
+                "repayment_frequency",
+            ]:
+                if field not in mutable and hasattr(self.instance, field):
+                    mutable[field] = getattr(self.instance, field)
+
+        return super().to_internal_value(mutable)
+
+    # ===================================================================
+    # 2. Make fields optional on update (Swagger/docs)
+    # ===================================================================
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.instance:  # update mode
+            fields["product"].required = False
+            fields["calculation_mode"].required = False
+            fields["start_date"].required = False
+            fields["repayment_frequency"].required = False
+        return fields
+
+    def validate(self, data):
+        mode = data["calculation_mode"]
+        product = data["product"]
+        principal = data["requested_amount"]
+        term = data.get("term_months")
+        payment = data.get("monthly_payment")
+        start_date = data.get("start_date", date.today())
+        frequency = data.get("repayment_frequency", "monthly")
+
+        # --- Mode-specific validation ---
+        if mode == "fixed_term":
+            if term is None:
+                raise serializers.ValidationError(
+                    {
+                        "term_months": "This field is required when calculation_mode is 'fixed_term'."
+                    }
+                )
+            if payment is not None:
+                raise serializers.ValidationError(
+                    {
+                        "monthly_payment": "This field is not allowed in 'fixed_term' mode."
+                    }
+                )
+        elif mode == "fixed_payment":
+            if payment is None:
+                raise serializers.ValidationError(
+                    {
+                        "monthly_payment": "This field is required when calculation_mode is 'fixed_payment'."
+                    }
+                )
+            if term is not None:
+                raise serializers.ValidationError(
+                    {
+                        "term_months": "This field is not allowed in 'fixed_payment' mode."
+                    }
+                )
+        else:
+            raise serializers.ValidationError(
+                {"calculation_mode": "Must be 'fixed_term' or 'fixed_payment'."}
+            )
+
+        # --- Compute projection ---
+        try:
+            if mode == "fixed_term":
+                proj = reducing_fixed_term(
+                    principal=principal,
+                    annual_rate=product.interest_rate,
+                    term_months=term,
+                    start_date=start_date,
+                    repayment_frequency=frequency,
+                )
+                data["monthly_payment"] = Decimal(proj["monthly_payment"])
+            else:
+                proj = reducing_fixed_payment(
+                    principal=principal,
+                    annual_rate=product.interest_rate,
+                    payment_per_month=payment,
+                    start_date=start_date,
+                    repayment_frequency=frequency,
+                )
+                data["term_months"] = proj["term_months"]
+
+            data["_projection"] = proj
+            data["total_interest"] = Decimal(proj["total_interest"])
+            data["repayment_amount"] = Decimal(proj["total_repayment"])
+
+        except Exception as e:
+            raise serializers.ValidationError(
+                {"projection": f"Calculation failed: {str(e)}"}
+            )
+
+        return data
+
+    # ===================================================================
+    # 4. Create → save projection & mode
+    # ===================================================================
+    def create(self, validated_data):
+        proj = validated_data.pop("_projection")
+        instance = super().create(validated_data)
+
+        instance.projection_snapshot = proj
+        instance.total_interest = validated_data["total_interest"]
+        instance.repayment_amount = validated_data["repayment_amount"]
+        instance.save(
+            update_fields=["projection_snapshot", "total_interest", "repayment_amount"]
+        )
+
+        self._update_self_guarantee_and_status(instance)
+        return instance
+
+    # ===================================================================
+    # 5. Update → recalc only if needed
+    # ===================================================================
+    def update(self, instance, validated_data):
+        proj = validated_data.pop("_projection", None)
+        instance = super().update(instance, validated_data)
+
+        if proj:
+            instance.projection_snapshot = proj
+            instance.total_interest = validated_data.get(
+                "total_interest", instance.total_interest
+            )
+            instance.repayment_amount = validated_data.get(
+                "repayment_amount", instance.repayment_amount
+            )
+            instance.save(
+                update_fields=[
+                    "projection_snapshot",
+                    "total_interest",
+                    "repayment_amount",
+                ]
+            )
+
+        self._update_self_guarantee_and_status(instance)
+        return instance
+
+    # ===================================================================
+    # 6. Self-guarantee & status logic
+    # ===================================================================
+    def _update_self_guarantee_and_status(self, instance):
+        total_savings = SavingsAccount.objects.filter(member=instance.member).aggregate(
+            t=models.Sum("balance")
+        )["t"] or Decimal("0")
+
+        committed = GuaranteeRequest.objects.filter(
+            guarantor__member=instance.member,
+            status="Accepted",
+            loan_application__status__in=["Submitted", "Approved", "Disbursed"],
+        ).aggregate(t=models.Sum("guaranteed_amount"))["t"] or Decimal("0")
+
+        outstanding = LoanAccount.objects.filter(
+            member=instance.member, is_active=True
+        ).aggregate(t=models.Sum("outstanding_balance"))["t"] or Decimal("0")
+
+        available = total_savings - committed - outstanding
+        self_guarantee = min(available, instance.requested_amount)
+
+        instance.self_guaranteed_amount = self_guarantee
+        instance.status = (
+            "Ready for Submission"
+            if self_guarantee == instance.requested_amount
+            else "Pending"
+        )
+        instance.save(update_fields=["self_guaranteed_amount", "status"])
+
+    # ===================================================================
+    # 7. SerializerMethodFields
+    # ===================================================================
     def get_projection(self, obj):
         return getattr(obj, "projection_snapshot", {})
 
@@ -108,168 +284,3 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
 
     def get_can_submit(self, obj):
         return self.get_is_fully_covered(obj)
-
-    # -----------------------------------------------------------------------
-    # Helpers
-    # -----------------------------------------------------------------------
-    def _is_first_loan(self, member):
-        return not LoanAccount.objects.filter(member=member).exists()
-
-    def _total_savings(self, member):
-        total = SavingsAccount.objects.filter(member=member).aggregate(
-            total=models.Sum("balance")
-        )["total"]
-        return total or Decimal("0")
-
-    # ----------------------------------------------------------------------
-    # Validation
-    # ----------------------------------------------------------------------
-    def validate(self, data):
-        member = self.context["request"].user
-        mode = data.get("calculation_mode")
-        term = data.get("term_months")
-        payment = data.get("monthly_payment")
-        requested_amount = data.get("requested_amount")
-
-        # Calculation Modes validation
-        if not mode:
-            raise serializers.ValidationError(
-                {"calculation_mode": "This field is required."}
-            )
-
-        if mode == "fixed_term":
-            if term is None:
-                raise serializers.ValidationError(
-                    {
-                        "term_months": "This field is required when calculation_mode is fixed_term."
-                    }
-                )
-            if payment is not None:
-                raise serializers.ValidationError(
-                    {
-                        "monthly_payment": "This field should not be provided when using fixed_term."
-                    }
-                )
-        elif mode == "fixed_payment":
-            if payment is None:
-                raise serializers.ValidationError(
-                    {
-                        "monthly_payment": "This field is required when calculation_mode is fixed_payment."
-                    }
-                )
-            if term is not None:
-                raise serializers.ValidationError(
-                    {
-                        "term_months": "This field should not be provided when using fixed_payment."
-                    }
-                )
-        else:
-            raise serializers.ValidationError(
-                {"calculation_mode": "Invalid calculation_mode."}
-            )
-
-        # Requested amount
-        if requested_amount is None:
-            raise serializers.ValidationError(
-                {"requested_amount": "This field is required."}
-            )
-
-        # -------------------------------------------------------------
-        # Compute projection
-        # -------------------------------------------------------------
-        principal = data["requested_amount"]
-        product = data["product"]
-        start_date = data.get("start_date", date.today())
-        frequency = data.get("repayment_frequency", "monthly")
-
-        try:
-            if mode == "fixed_term":
-                proj = reducing_fixed_term(
-                    principal=principal,
-                    annual_rate=product.interest_rate,
-                    term_months=term,
-                    start_date=start_date,
-                    repayment_frequency=frequency,
-                )
-                data["monthly_payment"] = Decimal(proj["monthly_payment"])
-            else:  # fixed_payment
-                proj = reducing_fixed_payment(
-                    principal=principal,
-                    annual_rate=product.interest_rate,
-                    payment_per_month=payment,
-                    start_date=start_date,
-                    repayment_frequency=frequency,
-                )
-                data["term_months"] = proj["term_months"]
-
-            data["_projection"] = proj
-            data["total_interest"] = Decimal(proj["total_interest"])
-            data["repayment_amount"] = Decimal(proj["total_repayment"])
-
-        except Exception as e:
-            raise serializers.ValidationError(
-                {"projection": f"Calculation failed: {str(e)}"}
-            )
-
-        return data
-
-    # ------------------------------------------------------------------
-    # 3. CREATE / UPDATE → write computed values
-    # ------------------------------------------------------------------
-    def create(self, validated_data):
-        validated_data.pop("calculation_mode", None)
-        proj = validated_data.pop("_projection")
-        instance = super().create(validated_data)
-        instance.projection_snapshot = proj
-        instance.total_interest = validated_data["total_interest"]
-        instance.save(update_fields=["projection_snapshot", "total_interest"])
-        self._update_self_guarantee_and_status(instance)
-        return instance
-
-    def update(self, instance, validated_data):
-        validated_data.pop("calculation_mode", None)
-        proj = validated_data.pop("_projection", None)
-        instance = super().update(instance, validated_data)
-        if proj:
-            instance.projection_snapshot = proj
-            instance.total_interest = validated_data.get(
-                "total_interest", instance.total_interest
-            )
-            instance.save(update_fields=["projection_snapshot", "total_interest"])
-        self._update_self_guarantee_and_status(instance)
-        return instance
-
-    # ------------------------------------------------------------------
-    # Helper: Self-guarantee + status
-    # ------------------------------------------------------------------
-    def _update_self_guarantee_and_status(self, instance):
-        from guarantorprofile.models import GuarantorProfile
-        from guaranteerequests.models import GuaranteeRequest
-
-        # Total savings
-        total_savings = SavingsAccount.objects.filter(member=instance.member).aggregate(
-            t=models.Sum("balance")
-        )["t"] or Decimal("0")
-
-        # Committed guarantees (by this member)
-        committed = GuaranteeRequest.objects.filter(
-            guarantor__member=instance.member,
-            status="Accepted",
-            loan_application__status__in=["Submitted", "Approved", "Disbursed"],
-        ).aggregate(t=models.Sum("guaranteed_amount"))["t"] or Decimal("0")
-
-        # Outstanding loans
-        outstanding = LoanAccount.objects.filter(
-            member=instance.member, is_active=True
-        ).aggregate(t=models.Sum("outstanding_balance"))["t"] or Decimal("0")
-
-        available = total_savings - committed - outstanding
-        self_guarantee = min(available, instance.requested_amount)
-
-        instance.self_guaranteed_amount = self_guarantee
-        instance.status = (
-            "Ready for Submission"
-            if self_guarantee == instance.requested_amount
-            else "Pending"
-        )
-        instance.save(update_fields=["self_guaranteed_amount", "status"])
