@@ -214,3 +214,6 @@ MPESA_API_URL = config("MPESA_API_URL")
 
 # Resend
 RESEND_API_KEY = config("RESEND_API_KEY")
+
+# Loan Application System
+FIRST_LOAN_MAX_SAVINGS_PERCENT = 80

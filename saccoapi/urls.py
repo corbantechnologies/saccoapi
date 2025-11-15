@@ -19,4 +19,6 @@ urlpatterns = [
     path("api/v1/venturepayments/", include("venturepayments.urls")),
     path("api/v1/transactions/", include("transactions.urls")),
     path("api/v1/tamarindloaninterests/", include("loanintereststamarind.urls")),
+    path("api/v1/loanapplications/", include("loanapplications.urls")),
+    # path("api/v1/guaranteerequests/", include("guaranteerequests.urls")),
 ]
