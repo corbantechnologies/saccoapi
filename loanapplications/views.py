@@ -83,16 +83,28 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
             # 1. Update GuarantorProfile FIRST
             for gr in app.guarantors.filter(status="Accepted"):
                 profile = gr.guarantor
-                profile.committed_guarantee_amount = F("committed_guarantee_amount") + gr.guaranteed_amount
+                profile.committed_guarantee_amount = (
+                    F("committed_guarantee_amount") + gr.guaranteed_amount
+                )
                 profile.save(update_fields=["committed_guarantee_amount"])
 
             # 2. Auto self-guarantee
-            if coverage["available_self_guarantee"] > 0 and app.self_guaranteed_amount == 0:
+            if (
+                coverage["available_self_guarantee"] > 0
+                and app.self_guaranteed_amount == 0
+            ):
                 try:
-                    profile = GuarantorProfile.objects.select_for_update().get(member=app.member)
-                    required = min(coverage["available_self_guarantee"], app.requested_amount)
+                    profile = GuarantorProfile.objects.select_for_update().get(
+                        member=app.member
+                    )
+                    required = min(
+                        coverage["available_self_guarantee"], app.requested_amount
+                    )
 
-                    if profile.committed_guarantee_amount + required > profile.max_guarantee_amount:
+                    if (
+                        profile.committed_guarantee_amount + required
+                        > profile.max_guarantee_amount
+                    ):
                         raise ValueError("Insufficient capacity")
 
                     # Update profile
@@ -210,12 +222,6 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
                 app, context=self.get_serializer_context()
             ).data,
         }
-
-        if app.loan_account:
-            data["loan_account"] = {
-                "account_number": app.loan_account.account_number,
-                "outstanding_balance": float(app.loan_account.outstanding_balance),
-            }
 
         return Response(data, status=status.HTTP_200_OK)
 

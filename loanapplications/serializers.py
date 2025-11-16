@@ -13,6 +13,7 @@ from loanapplications.calculators import reducing_fixed_payment, reducing_fixed_
 from guaranteerequests.models import GuaranteeRequest
 from guarantorprofile.models import GuarantorProfile
 from loanapplications.utils import compute_loan_coverage
+from loans.serializers import MinimalLoanAccountSerializer
 
 
 class LoanApplicationSerializer(serializers.ModelSerializer):
@@ -26,6 +27,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
     start_date = serializers.DateField(default=date.today)
     can_submit = serializers.SerializerMethodField(read_only=True)
     projection = serializers.SerializerMethodField()
+    loan_account = MinimalLoanAccountSerializer(read_only=True)
     # Computed fields
     total_savings = serializers.SerializerMethodField()
     available_self_guarantee = serializers.SerializerMethodField()
@@ -219,7 +221,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         # Only use what's needed for the loan
         instance.self_guaranteed_amount = min(
             Decimal(str(coverage["available_self_guarantee"])),
-            Decimal(str(instance.requested_amount))
+            Decimal(str(instance.requested_amount)),
         )
 
         # Recalculate coverage AFTER setting self_guaranteed_amount
@@ -227,7 +229,9 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         coverage = compute_loan_coverage(instance)
 
         # Set status based on coverage
-        instance.status = "Ready for Submission" if coverage["is_fully_covered"] else "Pending"
+        instance.status = (
+            "Ready for Submission" if coverage["is_fully_covered"] else "Pending"
+        )
         instance.save(update_fields=["status"])
 
     # ===================================================================
@@ -237,17 +241,16 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         return getattr(obj, "projection_snapshot", {})
 
     def get_total_savings(self, obj):
-        total = (
-            SavingsAccount.objects.filter(member=obj.member)
-            .aggregate(t=models.Sum("balance"))["t"]
-            or Decimal("0")
-        )
+        total = SavingsAccount.objects.filter(member=obj.member).aggregate(
+            t=models.Sum("balance")
+        )["t"] or Decimal("0")
         return float(Decimal(total))
 
     def get_available_self_guarantee(self, obj):
         total_savings = Decimal(
-            SavingsAccount.objects.filter(member=obj.member)
-            .aggregate(t=models.Sum("balance"))["t"]
+            SavingsAccount.objects.filter(member=obj.member).aggregate(
+                t=models.Sum("balance")
+            )["t"]
             or "0"
         )
 

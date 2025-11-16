@@ -51,3 +51,16 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             )
         validated_data["member"] = user
         return super().create(validated_data)
+
+
+class MinimalLoanAccountSerializer(serializers.ModelSerializer):
+
+    member = serializers.CharField(source="member.member_no", read_only=True)
+
+    class Meta:
+        model = LoanAccount
+        fields = (
+            "account_number",
+            "outstanding_balance",
+            "member",
+        )
