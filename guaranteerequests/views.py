@@ -1,10 +1,11 @@
 # guaranteerequests/views.py
-from rest_framework import generics, status
+from rest_framework import generics, status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import Q, F
 from decimal import Decimal
+
 
 from .models import GuaranteeRequest
 from .serializers import (
@@ -81,7 +82,7 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
 
         # 1. Only pending requests
         if old_status != "Pending":
-            raise serializer.ValidationError(
+            raise serializers.ValidationError(
                 {"status": "Only pending requests can be updated."}
             )
 
@@ -89,8 +90,8 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
         loan_app = instance.loan_application
         FINAL_STATES = ["Submitted", "Approved", "Disbursed", "Declined", "Cancelled"]
         if loan_app.status in FINAL_STATES:
-            raise serializer.ValidationError(
-                {"status": "Loan application is already finalized."}
+            raise serializers.ValidationError(
+                {"status": f"Loan application is in '{loan_app.status}' state."}
             )
 
         # 3. Update status
@@ -130,21 +131,4 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
                 loan_app.self_guaranteed_amount = Decimal("0")
                 loan_app.save(update_fields=["self_guaranteed_amount"])
 
-        # 6. Save via serializer
-        serializer.save()
-
-    def update(self, request, *args, **kwargs):
-        """
-        Return full GuaranteeRequest object after update
-        """
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-
-        # Return full serialized object
-        return Response(
-            GuaranteeRequestSerializer(
-                instance, context=self.get_serializer_context()
-            ).data
-        )
+        return Response(status=status.HTTP_200_OK, data=serializer.data)
