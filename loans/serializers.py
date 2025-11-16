@@ -16,6 +16,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     )
     member = serializers.CharField(source="member.member_no", read_only=True)
     member_no = serializers.CharField(write_only=True)
+    is_active = serializers.BooleanField(default=True)
     repayments = LoanRepaymentSerializer(many=True, read_only=True)
     loan_disbursements = LoanDisbursementSerializer(many=True, read_only=True)
     loan_interests = TamarindLoanInterestSerializer(many=True, read_only=True)

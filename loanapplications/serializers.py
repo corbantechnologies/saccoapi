@@ -12,6 +12,7 @@ from loantypes.models import LoanType
 from loanapplications.calculators import reducing_fixed_payment, reducing_fixed_term
 from guaranteerequests.models import GuaranteeRequest
 from guarantorprofile.models import GuarantorProfile
+from loanapplications.utils import compute_loan_coverage
 
 
 class LoanApplicationSerializer(serializers.ModelSerializer):
@@ -213,30 +214,21 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
     # 6. Self-guarantee & status logic
     # ===================================================================
     def _update_self_guarantee_and_status(self, instance):
-        total_savings = SavingsAccount.objects.filter(member=instance.member).aggregate(
-            t=models.Sum("balance")
-        )["t"] or Decimal("0")
+        coverage = compute_loan_coverage(instance)
 
-        committed = GuaranteeRequest.objects.filter(
-            guarantor__member=instance.member,
-            status="Accepted",
-            loan_application__status__in=["Submitted", "Approved", "Disbursed"],
-        ).aggregate(t=models.Sum("guaranteed_amount"))["t"] or Decimal("0")
-
-        outstanding = LoanAccount.objects.filter(
-            member=instance.member, is_active=True
-        ).aggregate(t=models.Sum("outstanding_balance"))["t"] or Decimal("0")
-
-        available = total_savings - committed - outstanding
-        self_guarantee = min(available, instance.requested_amount)
-
-        instance.self_guaranteed_amount = self_guarantee
-        instance.status = (
-            "Ready for Submission"
-            if self_guarantee == instance.requested_amount
-            else "Pending"
+        # Only use what's needed for the loan
+        instance.self_guaranteed_amount = min(
+            Decimal(str(coverage["available_self_guarantee"])),
+            Decimal(str(instance.requested_amount))
         )
-        instance.save(update_fields=["self_guaranteed_amount", "status"])
+
+        # Recalculate coverage AFTER setting self_guaranteed_amount
+        instance.save(update_fields=["self_guaranteed_amount"])
+        coverage = compute_loan_coverage(instance)
+
+        # Set status based on coverage
+        instance.status = "Ready for Submission" if coverage["is_fully_covered"] else "Pending"
+        instance.save(update_fields=["status"])
 
     # ===================================================================
     # 7. SerializerMethodFields
@@ -245,22 +237,32 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         return getattr(obj, "projection_snapshot", {})
 
     def get_total_savings(self, obj):
-        total = SavingsAccount.objects.filter(member=obj.member).aggregate(
-            t=models.Sum("balance")
-        )["t"]
-        return float(total or 0)
+        total = (
+            SavingsAccount.objects.filter(member=obj.member)
+            .aggregate(t=models.Sum("balance"))["t"]
+            or Decimal("0")
+        )
+        return float(Decimal(total))
 
     def get_available_self_guarantee(self, obj):
-        savings = self.get_total_savings(obj)
-        committed = GuaranteeRequest.objects.filter(
-            guarantor__member=obj.member,
-            status="Accepted",
-            loan_application__status__in=["Submitted", "Approved", "Disbursed"],
-        ).aggregate(t=models.Sum("guaranteed_amount"))["t"] or Decimal("0")
-        outstanding = LoanAccount.objects.filter(
-            member=obj.member, is_active=True
-        ).aggregate(t=models.Sum("outstanding_balance"))["t"] or Decimal("0")
-        available = Decimal(savings) - committed - outstanding
+        total_savings = Decimal(
+            SavingsAccount.objects.filter(member=obj.member)
+            .aggregate(t=models.Sum("balance"))["t"]
+            or "0"
+        )
+
+        committed_other = Decimal(
+            GuaranteeRequest.objects.filter(
+                guarantor__member=obj.member,
+                status="Accepted",
+                loan_application__status__in=["Submitted", "Approved", "Disbursed"],
+            )
+            .exclude(loan_application=obj)
+            .aggregate(t=models.Sum("guaranteed_amount"))["t"]
+            or "0"
+        )
+
+        available = total_savings - committed_other
         return float(max(Decimal("0"), available))
 
     def get_total_guaranteed_by_others(self, obj):
@@ -270,18 +272,17 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         return float(total or 0)
 
     def get_effective_coverage(self, obj):
-        return self.get_available_self_guarantee(
-            obj
-        ) + self.get_total_guaranteed_by_others(obj)
+        self_guarantee = Decimal(str(obj.self_guaranteed_amount or 0))
+        others = Decimal(str(self.get_total_guaranteed_by_others(obj)))
+        return float(self_guarantee + others)
 
     def get_remaining_to_cover(self, obj):
         coverage = self.get_effective_coverage(obj)
-        return float(
-            max(Decimal("0"), Decimal(obj.requested_amount) - Decimal(coverage))
-        )
+        requested = Decimal(str(obj.requested_amount))
+        return float(max(Decimal("0"), requested - Decimal(str(coverage))))
 
     def get_is_fully_covered(self, obj):
-        return self.get_remaining_to_cover(obj) <= 0
+        return self.get_remaining_to_cover(obj) <= 0.01
 
     def get_can_submit(self, obj):
         return self.get_is_fully_covered(obj)

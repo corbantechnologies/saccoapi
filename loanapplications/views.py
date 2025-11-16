@@ -80,36 +80,26 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
             app.status = "Submitted"
             app.save(update_fields=["status"])
 
-            # 5. Commit guarantees
+            # 1. Update GuarantorProfile FIRST
             for gr in app.guarantors.filter(status="Accepted"):
                 profile = gr.guarantor
-                profile.committed_guarantee_amount = (
-                    F("committed_guarantee_amount") + gr.guaranteed_amount
-                )
+                profile.committed_guarantee_amount = F("committed_guarantee_amount") + gr.guaranteed_amount
                 profile.save(update_fields=["committed_guarantee_amount"])
 
-            # 6. Auto self-guarantee
-            if (
-                coverage["available_self_guarantee"] > 0
-                and app.self_guaranteed_amount == 0
-            ):
+            # 2. Auto self-guarantee
+            if coverage["available_self_guarantee"] > 0 and app.self_guaranteed_amount == 0:
                 try:
-                    profile = GuarantorProfile.objects.select_for_update().get(
-                        member=app.member
-                    )
-                    required = min(
-                        coverage["available_self_guarantee"], app.requested_amount
-                    )
+                    profile = GuarantorProfile.objects.select_for_update().get(member=app.member)
+                    required = min(coverage["available_self_guarantee"], app.requested_amount)
 
-                    if (
-                        profile.committed_guarantee_amount + required
-                        > profile.max_guarantee_amount
-                    ):
-                        raise ValueError("Insufficient self-guarantee capacity")
+                    if profile.committed_guarantee_amount + required > profile.max_guarantee_amount:
+                        raise ValueError("Insufficient capacity")
 
+                    # Update profile
                     profile.committed_guarantee_amount += required
                     profile.save(update_fields=["committed_guarantee_amount"])
 
+                    # Create GuaranteeRequest
                     GuaranteeRequest.objects.create(
                         member=app.member,
                         loan_application=app,
@@ -117,6 +107,8 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
                         guaranteed_amount=required,
                         status="Accepted",
                     )
+
+                    # Update application
                     app.self_guaranteed_amount = required
                     app.save(update_fields=["self_guaranteed_amount"])
 
@@ -124,9 +116,7 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
                     app.status = "Ready for Submission"
                     app.save(update_fields=["status"])
                     return Response(
-                        {
-                            "detail": "Self-guarantee failed. Profile missing or insufficient capacity."
-                        },
+                        {"detail": "Self-guarantee failed."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 

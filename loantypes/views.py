@@ -26,7 +26,7 @@ class LoanTypeListCreateView(generics.ListCreateAPIView):
         created_accounts = []
 
         for member in members:
-            # Check if the member already has an account of this type
+            # Check if the members already has an account of this type
             if not LoanAccount.objects.filter(
                 member=member, loan_type=loan_type
             ).exists():
