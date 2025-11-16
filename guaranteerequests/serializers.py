@@ -111,7 +111,7 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
         return instance
 
 
-class GuaranteeApprovalDeclineSerializer(serializers.Serializer):
+class GuaranteeApprovalDeclineSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=["Accepted", "Declined"], required=True)
 
     class Meta:
