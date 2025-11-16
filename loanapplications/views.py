@@ -80,26 +80,16 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
             app.status = "Submitted"
             app.save(update_fields=["status"])
 
-            # 1. Update GuarantorProfile FIRST
-            for gr in app.guarantors.filter(status="Accepted"):
-                profile = gr.guarantor
-                profile.committed_guarantee_amount = (
-                    F("committed_guarantee_amount") + gr.guaranteed_amount
-                )
-                profile.save(update_fields=["committed_guarantee_amount"])
-
             # 2. Auto self-guarantee
             if (
-                coverage["available_self_guarantee"] > 0
-                and app.self_guaranteed_amount == 0
+                coverage["is_fully_covered"]
+                and coverage["total_guaranteed_by_others"] == 0
             ):
                 try:
                     profile = GuarantorProfile.objects.select_for_update().get(
                         member=app.member
                     )
-                    required = min(
-                        coverage["available_self_guarantee"], app.requested_amount
-                    )
+                    required = app.requested_amount
 
                     if (
                         profile.committed_guarantee_amount + required
@@ -186,32 +176,51 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
             app.save(update_fields=["loan_account", "status"])
 
         elif new_status == "Declined":
-            # Revert guarantees
-            for gr in app.guarantors.filter(status="Accepted"):
-                profile = gr.guarantor
-                profile.committed_guarantee_amount = (
-                    F("committed_guarantee_amount") - gr.guaranteed_amount
-                )
-                profile.save(update_fields=["committed_guarantee_amount"])
-                gr.status = "Cancelled"
-                gr.save(update_fields=["status"])
+            with transaction.atomic():
+                # === 1. REVERT SELF-GUARANTEE ===
+                if app.self_guaranteed_amount > 0:
+                    try:
+                        profile = app.member.guarantor_profile
+                        current = profile.committed_guarantee_amount
+                        to_revert = app.self_guaranteed_amount
 
-            if app.self_guaranteed_amount > 0:
-                try:
-                    profile = app.member.guarantor_profile
-                    profile.committed_guarantee_amount = (
-                        F("committed_guarantee_amount") - app.self_guaranteed_amount
-                    )
+                        if current < to_revert:
+                            # Safety: Don't go negative
+                            to_revert = current
+
+                        profile.committed_guarantee_amount = F("committed_guarantee_amount") - to_revert
+                        profile.save(update_fields=["committed_guarantee_amount"])
+                        profile.refresh_from_db()  # Critical!
+
+                        # Reset app
+                        app.self_guaranteed_amount = 0
+                        app.save(update_fields=["self_guaranteed_amount"])
+
+                    except GuarantorProfile.DoesNotExist:
+                        pass
+
+                # === 2. REVERT EXTERNAL GUARANTORS ===
+                for gr in app.guarantors.filter(status="Accepted"):
+                    profile = gr.guarantor
+                    current = profile.committed_guarantee_amount
+                    to_revert = gr.guaranteed_amount
+
+                    if current < to_revert:
+                        to_revert = current
+
+                    profile.committed_guarantee_amount = F("committed_guarantee_amount") - to_revert
                     profile.save(update_fields=["committed_guarantee_amount"])
-                except GuarantorProfile.DoesNotExist:
-                    pass
-                app.self_guaranteed_amount = 0
-                app.save(update_fields=["self_guaranteed_amount"])
+                    profile.refresh_from_db()
 
-            app.status = "Declined"
-            app.save(update_fields=["status"])
+                    gr.status = "Cancelled"
+                    gr.save(update_fields=["status"])
 
-        serializer.save(status=new_status)
+                # === 3. UPDATE STATUS ===
+                app.status = "Declined"
+                app.save(update_fields=["status"])
+
+            # Only save once
+            serializer.save(status="Declined")
 
     def update(self, request, *args, **kwargs):
         response = super().update(request, *args, **kwargs)
