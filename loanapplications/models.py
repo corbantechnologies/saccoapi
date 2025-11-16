@@ -4,6 +4,7 @@ from datetime import date
 
 from accounts.abstracts import TimeStampedModel, UniversalIdModel, ReferenceModel
 from loantypes.models import LoanType
+from loans.models import LoanAccount
 
 
 User = get_user_model()
@@ -49,9 +50,7 @@ class LoanApplication(UniversalIdModel, TimeStampedModel, ReferenceModel):
         max_digits=15, decimal_places=2, null=True, blank=True
     )
     # REDUCING BALANCE FIELDS
-    calculation_mode = models.CharField(
-        max_length=20, choices=CALCULATION_MODE_CHOICES, null=True, blank=True
-    )
+    calculation_mode = models.CharField(max_length=20, choices=CALCULATION_MODE_CHOICES)
     term_months = models.PositiveIntegerField(null=True, blank=True)
     monthly_payment = models.DecimalField(
         max_digits=15, decimal_places=2, null=True, blank=True
@@ -64,8 +63,14 @@ class LoanApplication(UniversalIdModel, TimeStampedModel, ReferenceModel):
     self_guaranteed_amount = models.DecimalField(
         max_digits=15, decimal_places=2, default=0.00
     )
-
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="Pending")
+    loan_account = models.ForeignKey(
+        LoanAccount,
+        on_delete=models.PROTECT,
+        related_name="applications",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         verbose_name = "Loan Application"

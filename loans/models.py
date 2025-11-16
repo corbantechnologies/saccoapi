@@ -33,6 +33,7 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     identity = models.CharField(max_length=100, blank=True, null=True, unique=True)
     last_interest_calculation = models.DateTimeField(null=True, blank=True)
 
+
     class Meta:
         verbose_name = "Loan Account"
         verbose_name_plural = "Loan Accounts"
