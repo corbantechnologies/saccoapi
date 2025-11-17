@@ -15,6 +15,7 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
     member = serializers.CharField(source="member.member_no", read_only=True)
     member_no = serializers.CharField(write_only=True)
 
+    guarantor_name = serializers.SerializerMethodField(read_only=True)
     active_guarantees_count = serializers.SerializerMethodField()
     committed_amount = serializers.SerializerMethodField()
     available_amount = serializers.SerializerMethodField()
@@ -25,6 +26,7 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
         fields = (
             "member_no",
             "member",
+            "guarantor_name",
             "is_eligible",
             "max_active_guarantees",
             "active_guarantees_count",
@@ -51,6 +53,9 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
                     {"member_no": "Member with this member number does not exist."}
                 )
         return data
+
+    def get_guarantor_name(self, obj):
+        return obj.member.get_full_name()
 
     def get_active_guarantees_count(self, obj):
         return obj.active_guarantees_count()
