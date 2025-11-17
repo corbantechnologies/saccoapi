@@ -66,78 +66,106 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         )
 
     # ===================================================================
-    # 1. Allow partial updates: fill missing fields from instance
-    # ===================================================================
-    def to_internal_value(self, data):
-        mutable = data.copy()
-
-        if self.instance:
-            # Fill missing critical fields from existing instance
-            for field in [
-                "calculation_mode",
-                "product",
-                "start_date",
-                "repayment_frequency",
-            ]:
-                if field not in mutable and hasattr(self.instance, field):
-                    mutable[field] = getattr(self.instance, field)
-
-        return super().to_internal_value(mutable)
-
-    # ===================================================================
-    # 2. Make fields optional on update (Swagger/docs)
+    # Make fields optional on update
     # ===================================================================
     def get_fields(self):
         fields = super().get_fields()
-        if self.instance:  # update mode
-            fields["product"].required = False
-            fields["calculation_mode"].required = False
-            fields["start_date"].required = False
-            fields["repayment_frequency"].required = False
+        if self.instance:
+            for f in [
+                "product",
+                "calculation_mode",
+                "start_date",
+                "repayment_frequency",
+            ]:
+                fields[f].required = False
+            # Make term/monthly_payment optional on update
+            fields["term_months"].required = False
+            fields["monthly_payment"].required = False
         return fields
 
     def validate(self, data):
-        mode = data["calculation_mode"]
-        product = data["product"]
-        principal = data["requested_amount"]
-        term = data.get("term_months")
-        payment = data.get("monthly_payment")
-        start_date = data.get("start_date", date.today())
-        frequency = data.get("repayment_frequency", "monthly")
+        """
+        Only validate fields that are ACTUALLY being updated.
+        """
+        instance = getattr(self, "instance", None)
+        partial = self.context["request"].method == "PATCH"
 
-        # --- Mode-specific validation ---
+        # If partial update and key fields not in data → use instance values
+        mode = data.get(
+            "calculation_mode",
+            getattr(instance, "calculation_mode", None) if instance else None,
+        )
+        product = data.get(
+            "product", getattr(instance, "product", None) if instance else None
+        )
+        principal = data.get(
+            "requested_amount",
+            getattr(instance, "requested_amount", None) if instance else None,
+        )
+        term = data.get(
+            "term_months", getattr(instance, "term_months", None) if instance else None
+        )
+        payment = data.get(
+            "monthly_payment",
+            getattr(instance, "monthly_payment", None) if instance else None,
+        )
+        start_date = data.get(
+            "start_date",
+            getattr(instance, "start_date", date.today()) if instance else date.today(),
+        )
+        frequency = data.get(
+            "repayment_frequency",
+            (
+                getattr(instance, "repayment_frequency", "monthly")
+                if instance
+                else "monthly"
+            ),
+        )
+
+        # Skip full validation if no calculation fields changed
+        calc_fields = {
+            "requested_amount",
+            "calculation_mode",
+            "term_months",
+            "monthly_payment",
+            "product",
+            "start_date",
+            "repayment_frequency",
+        }
+        if partial and not (set(data.keys()) & calc_fields):
+            return data  # No recalc needed
+
+        # --- FULL VALIDATION ONLY IF NEEDED ---
+        if mode is None:
+            raise serializers.ValidationError(
+                {"calculation_mode": "This field is required."}
+            )
+        if product is None:
+            raise serializers.ValidationError({"product": "This field is required."})
+        if principal is None:
+            raise serializers.ValidationError(
+                {"requested_amount": "This field is required."}
+            )
+
+        # Mode-specific rules
         if mode == "fixed_term":
             if term is None:
                 raise serializers.ValidationError(
-                    {
-                        "term_months": "This field is required when calculation_mode is 'fixed_term'."
-                    }
+                    {"term_months": "Required in 'fixed_term' mode."}
                 )
-            if payment is not None:
-                raise serializers.ValidationError(
-                    {
-                        "monthly_payment": "This field is not allowed in 'fixed_term' mode."
-                    }
-                )
+
         elif mode == "fixed_payment":
             if payment is None:
                 raise serializers.ValidationError(
-                    {
-                        "monthly_payment": "This field is required when calculation_mode is 'fixed_payment'."
-                    }
+                    {"monthly_payment": "Required in 'fixed_payment' mode."}
                 )
-            if term is not None:
-                raise serializers.ValidationError(
-                    {
-                        "term_months": "This field is not allowed in 'fixed_payment' mode."
-                    }
-                )
+
         else:
             raise serializers.ValidationError(
                 {"calculation_mode": "Must be 'fixed_term' or 'fixed_payment'."}
             )
 
-        # --- Compute projection ---
+        # --- RECALCULATE PROJECTION ---
         try:
             if mode == "fixed_term":
                 proj = reducing_fixed_term(
@@ -148,6 +176,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
                     repayment_frequency=frequency,
                 )
                 data["monthly_payment"] = Decimal(proj["monthly_payment"])
+                data.pop("term_months", None)  # term_months already set
             else:
                 proj = reducing_fixed_payment(
                     principal=principal,
@@ -157,6 +186,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
                     repayment_frequency=frequency,
                 )
                 data["term_months"] = proj["term_months"]
+                data.pop("monthly_payment", None)
 
             data["_projection"] = proj
             data["total_interest"] = Decimal(proj["total_interest"])
