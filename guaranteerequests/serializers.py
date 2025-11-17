@@ -117,3 +117,19 @@ class GuaranteeApprovalDeclineSerializer(serializers.ModelSerializer):
     class Meta:
         model = GuaranteeRequest
         fields = ("status",)
+
+
+class LoanApplicationGuaranteeRequestSerializer(serializers.ModelSerializer):
+    member = serializers.CharField(source="member.member_no", read_only=True)
+    guarantor = serializers.CharField(
+        source="guarantor.member.member_no", read_only=True
+    )
+
+    class Meta:
+        model = GuaranteeRequest
+        fields = (
+            "member",
+            "guarantor",
+            "guaranteed_amount",
+            "status",
+        )

@@ -14,6 +14,7 @@ from guaranteerequests.models import GuaranteeRequest
 from guarantorprofile.models import GuarantorProfile
 from loanapplications.utils import compute_loan_coverage
 from loans.serializers import MinimalLoanAccountSerializer
+from guaranteerequests.serializers import LoanApplicationGuaranteeRequestSerializer
 
 
 class LoanApplicationSerializer(serializers.ModelSerializer):
@@ -28,6 +29,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
     can_submit = serializers.SerializerMethodField(read_only=True)
     projection = serializers.SerializerMethodField()
     loan_account = MinimalLoanAccountSerializer(read_only=True)
+    guarantors = LoanApplicationGuaranteeRequestSerializer(many=True, read_only=True)
     # Computed fields
     total_savings = serializers.SerializerMethodField()
     available_self_guarantee = serializers.SerializerMethodField()
@@ -62,6 +64,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
             "updated_at",
             "reference",
             "loan_account",
+            "guarantors",
             "projection",
         )
 
