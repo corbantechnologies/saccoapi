@@ -20,7 +20,7 @@ from accounts.serializers import (
     BulkMemberCreatedByAdminSerializer,
     PasswordChangeSerializer,
 )
-from accounts.permissions import IsSystemAdmin
+from accounts.permissions import IsSystemAdmin, IsSystemAdminOrReadOnly
 from accounts.utils import (
     send_password_reset_email,
     send_member_number_email,
@@ -176,7 +176,7 @@ class MemberListView(generics.ListAPIView):
     Fetch the list of members
     """
 
-    permission_classes = (IsSystemAdmin,)
+    permission_classes = (IsSystemAdminOrReadOnly,)
     serializer_class = BaseUserSerializer
     queryset = User.objects.all()
 
