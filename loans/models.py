@@ -33,14 +33,15 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     identity = models.CharField(max_length=100, blank=True, null=True, unique=True)
     last_interest_calculation = models.DateTimeField(null=True, blank=True)
 
-
     class Meta:
         verbose_name = "Loan Account"
         verbose_name_plural = "Loan Accounts"
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.account_number} - {self.member.member_no}"
+        return (
+            f"{self.account_number} - {self.member.member_no} - {self.loan_type.name}"
+        )
 
     def save(self, *args, **kwargs):
         if not self.identity:
