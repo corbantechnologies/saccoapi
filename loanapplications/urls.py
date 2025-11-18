@@ -5,12 +5,14 @@ from loanapplications.views import (
     LoanApplicationDetailView,
     SubmitLoanApplicationView,
     ApproveOrDeclineLoanApplicationView,
+    LoanApplicationListView,
 )
 
 app_name = "loanapplications"
 
 urlpatterns = [
-    path("", LoanApplicationListCreateView.as_view(), name="loanapplications"),
+    path("", LoanApplicationListView.as_view(), name="loanapplications-list"),
+    path("list/", LoanApplicationListCreateView.as_view(), name="loanapplications"),
     path(
         "<str:reference>/",
         LoanApplicationDetailView.as_view(),

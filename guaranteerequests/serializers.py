@@ -20,6 +20,7 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
     guaranteed_amount = serializers.DecimalField(
         max_digits=15, decimal_places=2, min_value=Decimal("0.01")
     )
+    loan_application_detail = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = GuaranteeRequest
@@ -33,7 +34,19 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "reference",
+            "loan_application_detail",
         )
+
+    def get_loan_application_detail(self, obj):
+        loan = obj.loan_application
+        return {
+            "requested_amount": loan.requested_amount,
+            "repayment_amount": loan.repayment_amount,
+            "total_interest": loan.total_interest,
+            "status": loan.status,
+            "term_months": loan.projection_snapshot["term_months"],
+            "monthly_payment": loan.monthly_payment,
+        }
 
     def validate(self, data):
         request = self.context["request"]
@@ -117,3 +130,19 @@ class GuaranteeApprovalDeclineSerializer(serializers.ModelSerializer):
     class Meta:
         model = GuaranteeRequest
         fields = ("status",)
+
+
+class LoanApplicationGuaranteeRequestSerializer(serializers.ModelSerializer):
+    member = serializers.CharField(source="member.member_no", read_only=True)
+    guarantor = serializers.CharField(
+        source="guarantor.member.member_no", read_only=True
+    )
+
+    class Meta:
+        model = GuaranteeRequest
+        fields = (
+            "member",
+            "guarantor",
+            "guaranteed_amount",
+            "status",
+        )

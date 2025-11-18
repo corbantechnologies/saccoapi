@@ -16,7 +16,7 @@ from loandisbursements.serializers import (
     BulkLoanDisbursementSerializer,
 )
 from loans.models import LoanAccount
-from loans.utils import send_disbursement_made_email
+from loandisbursements.utils import send_disbursement_made_email
 
 
 logger = logging.getLogger(__name__)

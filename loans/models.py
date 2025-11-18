@@ -45,6 +45,4 @@ class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
     def save(self, *args, **kwargs):
         if not self.identity:
             self.identity = slugify(f"{self.member.member_no}-{self.account_number}")
-        if self.outstanding_balance <= 0:
-            self.is_active = False
         super().save(*args, **kwargs)

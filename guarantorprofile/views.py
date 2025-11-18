@@ -15,4 +15,4 @@ class GuarantorProfileDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = GuarantorProfile.objects.all()
     serializer_class = GuarantorProfileSerializer
     permission_classes = [IsSystemAdminOrReadOnly]
-    lookup_field = "reference"
+    lookup_field = "member__member_no"

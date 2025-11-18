@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from guarantorprofile.models import GuarantorProfile
 from savings.models import SavingsAccount
+from guaranteerequests.serializers import GuaranteeRequestSerializer
 
 User = get_user_model()
 
@@ -15,16 +16,19 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
     member = serializers.CharField(source="member.member_no", read_only=True)
     member_no = serializers.CharField(write_only=True)
 
+    guarantor_name = serializers.SerializerMethodField(read_only=True)
     active_guarantees_count = serializers.SerializerMethodField()
     committed_amount = serializers.SerializerMethodField()
     available_amount = serializers.SerializerMethodField()
     has_reached_limit = serializers.SerializerMethodField()
+    guarantees = GuaranteeRequestSerializer(many=True, read_only=True)
 
     class Meta:
         model = GuarantorProfile
         fields = (
             "member_no",
             "member",
+            "guarantor_name",
             "is_eligible",
             "max_active_guarantees",
             "active_guarantees_count",
@@ -34,6 +38,7 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
             "reference",
             "created_at",
             "updated_at",
+            "guarantees",
         )
 
     def validate(self, data):
@@ -51,6 +56,9 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
                     {"member_no": "Member with this member number does not exist."}
                 )
         return data
+
+    def get_guarantor_name(self, obj):
+        return obj.member.get_full_name()
 
     def get_active_guarantees_count(self, obj):
         return obj.active_guarantees_count()

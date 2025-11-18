@@ -24,6 +24,7 @@ from savings.serializers import SavingsAccountSerializer
 from loans.serializers import LoanAccountSerializer
 from ventures.serializers import VentureAccountSerializer
 from nextofkin.serializers import NextOfKinSerializer
+from guarantorprofile.serializers import GuarantorProfileSerializer
 
 User = get_user_model()
 
@@ -48,6 +49,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
     loans = LoanAccountSerializer(many=True, read_only=True)
     venture_accounts = VentureAccountSerializer(many=True, read_only=True)
     next_of_kin = NextOfKinSerializer(many=True, read_only=True)
+    guarantor_profile = GuarantorProfileSerializer(read_only=True)
 
     class Meta:
         model = User
@@ -80,6 +82,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "reference",
+            "guarantor_profile",
             "next_of_kin",
             "savings_accounts",
             "loans",

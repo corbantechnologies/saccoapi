@@ -12,6 +12,7 @@ urlpatterns = [
     path("api/v1/savingsdeposits/", include("savingsdeposits.urls")),
     path("api/v1/loans/", include("loans.urls")),
     path("api/v1/loanrepayments/", include("loanrepayments.urls")),
+    path("api/v1/loandisbursements/", include("loandisbursements.urls")),
     path("api/v1/savingswithdrawals/", include("savingswithdrawals.urls")),
     path("api/v1/venturetypes/", include("venturetypes.urls")),
     path("api/v1/ventures/", include("ventures.urls")),
