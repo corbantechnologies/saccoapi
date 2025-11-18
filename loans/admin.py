@@ -6,12 +6,12 @@ from loans.models import LoanAccount
 class LoanAccountAdmin(admin.ModelAdmin):
     list_display = (
         "account_number",
-        "user",
+        "member",
         "loan_type",
         "is_approved",
         "is_active",
     )
-    search_fields = ("account_number", "user__member_no")
+    search_fields = ("account_number", "member__member_no")
     list_filter = ("is_approved", "is_active", "created_at", "updated_at")
     ordering = ("-created_at",)
 
