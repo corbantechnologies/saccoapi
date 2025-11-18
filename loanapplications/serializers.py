@@ -179,7 +179,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
                     repayment_frequency=frequency,
                 )
                 data["monthly_payment"] = Decimal(proj["monthly_payment"])
-                data.pop("term_months", None)  # term_months already set
+                data.pop("term_months", None)
             else:
                 proj = reducing_fixed_payment(
                     principal=principal,

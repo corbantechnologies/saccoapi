@@ -107,7 +107,10 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
             profile.committed_guarantee_amount = (
                 F("committed_guarantee_amount") + amount
             )
-            profile.save(update_fields=["committed_guarantee_amount"])
+            profile.max_active_guarantees = F("max_active_guarantees") - 1
+            profile.save(
+                update_fields=["committed_guarantee_amount", "max_active_guarantees"]
+            )
 
             # Self-guarantee: update loan
             if instance.guarantor.member == loan_app.member:
@@ -122,10 +125,13 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
 
         # 5. DECLINE (only if previously Accepted)
         elif new_status == "Declined" and old_status == "Accepted":
+            profile.max_active_guarantees = F("max_active_guarantees") + 1
             profile.committed_guarantee_amount = (
                 F("committed_guarantee_amount") - amount
             )
-            profile.save(update_fields=["committed_guarantee_amount"])
+            profile.save(
+                update_fields=["committed_guarantee_amount", "max_active_guarantees"]
+            )
 
             if instance.guarantor.member == loan_app.member:
                 loan_app.self_guaranteed_amount = Decimal("0")

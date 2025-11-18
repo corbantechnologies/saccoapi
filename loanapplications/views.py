@@ -25,6 +25,9 @@ class LoanApplicationListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         serializer.save(member=self.request.user)
 
+    def get_queryset(self):
+        return self.queryset.filter(member=self.request.user)
+
 
 class LoanApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = LoanApplication.objects.all()
@@ -34,6 +37,12 @@ class LoanApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def patch(self, request, *args, **kwargs):
         return self.partial_update(request, *args, **kwargs)
+
+
+class LoanApplicationListView(generics.ListAPIView):
+    queryset = LoanApplication.objects.all()
+    serializer_class = LoanApplicationSerializer
+    permission_classes = [IsSystemAdminOrReadOnly]
 
 
 # ——————————————————————————————————————————————————————————————
@@ -188,8 +197,16 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
                             # Safety: Don't go negative
                             to_revert = current
 
-                        profile.committed_guarantee_amount = F("committed_guarantee_amount") - to_revert
-                        profile.save(update_fields=["committed_guarantee_amount"])
+                        profile.committed_guarantee_amount = (
+                            F("committed_guarantee_amount") - to_revert
+                        )
+                        profile.max_active_guarantees -= 1
+                        profile.save(
+                            update_fields=[
+                                "committed_guarantee_amount",
+                                "max_active_guarantees",
+                            ]
+                        )
                         profile.refresh_from_db()  # Critical!
 
                         # Reset app
@@ -208,7 +225,9 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
                     if current < to_revert:
                         to_revert = current
 
-                    profile.committed_guarantee_amount = F("committed_guarantee_amount") - to_revert
+                    profile.committed_guarantee_amount = (
+                        F("committed_guarantee_amount") - to_revert
+                    )
                     profile.save(update_fields=["committed_guarantee_amount"])
                     profile.refresh_from_db()
 

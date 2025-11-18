@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from guarantorprofile.models import GuarantorProfile
 from savings.models import SavingsAccount
+from guaranteerequests.serializers import GuaranteeRequestSerializer
 
 User = get_user_model()
 
@@ -20,6 +21,7 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
     committed_amount = serializers.SerializerMethodField()
     available_amount = serializers.SerializerMethodField()
     has_reached_limit = serializers.SerializerMethodField()
+    guarantees = GuaranteeRequestSerializer(many=True, read_only=True)
 
     class Meta:
         model = GuarantorProfile
@@ -36,6 +38,7 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
             "reference",
             "created_at",
             "updated_at",
+            "guarantees",
         )
 
     def validate(self, data):

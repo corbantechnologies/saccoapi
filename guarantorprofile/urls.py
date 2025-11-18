@@ -14,7 +14,7 @@ urlpatterns = [
         name="guarantorprofile-list-create",
     ),
     path(
-        "<str:reference>/",
+        "<str:member__member_no>/",
         GuarantorProfileDetailView.as_view(),
         name="guarantorprofile-detail",
     ),
