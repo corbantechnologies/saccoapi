@@ -17,4 +17,4 @@ class LoanAccountAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
 
 
-admin.site.register(LoanAccount)
+admin.site.register(LoanAccount, LoanAccountAdmin)
