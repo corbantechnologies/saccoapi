@@ -8,7 +8,6 @@ class LoanAccountAdmin(admin.ModelAdmin):
         "account_number",
         "user",
         "loan_type",
-        "loan_amount",
         "is_approved",
         "is_active",
     )
