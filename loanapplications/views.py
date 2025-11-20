@@ -30,6 +30,10 @@ class LoanApplicationListCreateView(generics.ListCreateAPIView):
 
 
 class LoanApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    - Member can modify the loan application details
+    - Admin can also ammend the loan application
+    """
     queryset = LoanApplication.objects.all()
     serializer_class = LoanApplicationSerializer
     permission_classes = [IsAuthenticated]
@@ -43,6 +47,43 @@ class LoanApplicationListView(generics.ListAPIView):
     queryset = LoanApplication.objects.all()
     serializer_class = LoanApplicationSerializer
     permission_classes = [IsSystemAdminOrReadOnly]
+
+
+class SubmitLoanApplicationForReview(generics.GenericAPIView):
+    queryset = LoanApplication.objects.all()
+    serializer_class = LoanApplicationSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = "reference"
+
+    def post(self, request, reference):
+        app = self.get_object()
+
+        # 1. Ownership
+        if app.member != request.user:
+            return Response(
+                {"detail": "You can only submit your own applications."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # 2. Must be ready
+        if app.status != "Ready for Review":
+            return Response(
+                {"detail": "Application is not ready for review."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 3. Check coverage
+        coverage = compute_loan_coverage(app)
+        if not coverage["is_fully_covered"]:
+            return Response(
+                {"detail": "Guarantees do not cover full amount."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        app.status = "Submitted"
+        app.save(update_fields=["status"])
+
+        return Response({"detail": "Submitted for review."}, status=status.HTTP_200_OK)
 
 
 # ——————————————————————————————————————————————————————————————

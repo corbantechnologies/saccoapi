@@ -1,4 +1,3 @@
-# guaranteerequests/views.py
 from rest_framework import generics, status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response

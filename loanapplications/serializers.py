@@ -263,7 +263,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
 
         # Set status based on coverage
         instance.status = (
-            "Ready for Submission" if coverage["is_fully_covered"] else "Pending"
+            "Ready for Review" if coverage["is_fully_covered"] else "Pending"
         )
         instance.save(update_fields=["status"])
 
