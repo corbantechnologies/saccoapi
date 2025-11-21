@@ -14,6 +14,7 @@ class NextOfKin(UniversalIdModel, TimeStampedModel, ReferenceModel):
     last_name = models.CharField(max_length=255)
     relationship = models.CharField(max_length=255)
     phone = models.CharField(max_length=25)
+    percentage = models.DecimalField(max_digits=12, decimal_places=2)
     email = models.EmailField(max_length=255, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True, null=True)
 
