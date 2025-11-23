@@ -73,7 +73,13 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
 
     def get_has_reached_limit(self, obj):
         count = obj.active_guarantees_count()
-        return count >= obj.max_active_guarantees
+        available_amount = obj.available_capacity()
+
+        if available_amount <= 0:
+            return True
+        if count >= obj.max_active_guarantees:
+            return True
+        return False
 
     def create(self, validated_data):
         member_no = validated_data.pop("member_no")

@@ -44,6 +44,26 @@ class LoanApplicationListView(generics.ListAPIView):
     serializer_class = LoanApplicationSerializer
     permission_classes = [IsSystemAdminOrReadOnly]
 
+class SubmitForAmendmentView(generics.GenericAPIView):
+    queryset = LoanApplication.objects.all()
+    permission_classes = [IsAuthenticated]
+    lookup_field = "reference"
+
+    def post(self, request, reference):
+        app = self.get_object()
+        if app.member != request.user:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        
+        if app.status != "Pending":
+            return Response(
+                {"detail": "Only pending applications can be submitted for amendment."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        app.status = "Ready for Amendment"
+        app.save(update_fields=["status"])
+        return Response({"detail": "Submitted for amendment."}, status=status.HTTP_200_OK)
+
 
 # ——————————————————————————————————————————————————————————————
 # 2. Submit Application (Member) — Link to Existing LoanAccount
@@ -107,7 +127,11 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
                         raise ValueError("Insufficient self-guarantee capacity")
 
                     profile.committed_guarantee_amount += required
-                    profile.save(update_fields=["committed_guarantee_amount"])
+                    # Also decrement max_active_guarantees as per legacy logic
+                    if profile.max_active_guarantees > 0:
+                        profile.max_active_guarantees -= 1
+                        
+                    profile.save(update_fields=["committed_guarantee_amount", "max_active_guarantees"])
                     
                     # Create/Update GuaranteeRequest for record keeping if needed, 
                     # but we already have self_guaranteed_amount on the loan.
@@ -140,42 +164,32 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            
-
-        return Response(
-            {
-                "detail": "Loan application submitted successfully.",
-                "application": LoanApplicationSerializer(
-                    app, context=self.get_serializer_context()
-                ).data,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-
-# ——————————————————————————————————————————————————————————————
-# 2b. Amendment Workflow Views
-# ——————————————————————————————————————————————————————————————
-
-class SubmitForAmendmentView(generics.GenericAPIView):
-    queryset = LoanApplication.objects.all()
-    permission_classes = [IsAuthenticated]
-    lookup_field = "reference"
-
-    def post(self, request, reference):
-        app = self.get_object()
-        if app.member != request.user:
-            return Response(status=status.HTTP_403_FORBIDDEN)
-        
-        if app.status != "Pending":
-            return Response(
-                {"detail": "Only pending applications can be submitted for amendment."},
-                status=status.HTTP_400_BAD_REQUEST
+            # B. External Guarantors
+            # Exclude self-guarantee to avoid double counting
+            accepted_guarantors = app.guarantors.filter(status="Accepted").exclude(
+                guarantor__member=app.member
             )
             
-        app.status = "Ready for Amendment"
+            for gr in accepted_guarantors:
+                profile = GuarantorProfile.objects.select_for_update().get(pk=gr.guarantor.pk)
+                required = gr.guaranteed_amount
+                
+                if (
+                    profile.committed_guarantee_amount + required
+                    > profile.max_guarantee_amount
+                ):
+                     raise ValueError(f"Guarantor {profile.member.member_no} has insufficient capacity")
+                
+                profile.committed_guarantee_amount += required
+                # Also decrement max_active_guarantees as per legacy logic
+                if profile.max_active_guarantees > 0:
+                    profile.max_active_guarantees -= 1
+                    
+                profile.save(update_fields=["committed_guarantee_amount", "max_active_guarantees"])
+        
+        app.status = "Submitted"
         app.save(update_fields=["status"])
-        return Response({"detail": "Submitted for amendment."}, status=status.HTTP_200_OK)
+        return Response({"detail": "Submitted for approval."}, status=status.HTTP_200_OK)
 
 
 class AdminAmendView(generics.RetrieveUpdateAPIView):

@@ -179,7 +179,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
                     repayment_frequency=frequency,
                 )
                 data["monthly_payment"] = Decimal(proj["monthly_payment"])
-                data.pop("term_months", None)
+                # data.pop("term_months", None)  <-- Don't remove the input!
             else:
                 proj = reducing_fixed_payment(
                     principal=principal,
@@ -189,7 +189,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
                     repayment_frequency=frequency,
                 )
                 data["term_months"] = proj["term_months"]
-                data.pop("monthly_payment", None)
+                # data.pop("monthly_payment", None) <-- Don't remove the input!
 
             data["_projection"] = proj
             data["total_interest"] = Decimal(proj["total_interest"])
