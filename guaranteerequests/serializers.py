@@ -127,9 +127,13 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
 class GuaranteeApprovalDeclineSerializer(serializers.ModelSerializer):
     status = serializers.ChoiceField(choices=["Accepted", "Declined"], required=True)
 
+    guaranteed_amount = serializers.DecimalField(
+        max_digits=15, decimal_places=2, required=False
+    )
+
     class Meta:
         model = GuaranteeRequest
-        fields = ("status",)
+        fields = ("status", "guaranteed_amount")
 
 
 class LoanApplicationGuaranteeRequestSerializer(serializers.ModelSerializer):

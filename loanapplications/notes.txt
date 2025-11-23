@@ -1,0 +1,27 @@
+New implementation
+1. Member applies for loan - Pending (no guarantors yet but self guarantee has run)
+2. Submits it for Amendment to the admin - Ready for Amendment
+3. Admin ammends (maybe changes the requested amount or product or leaves it as it is) - Amended
+4. Member cancels or accepts the amendment:
+    a. Member cancels (application ends there) - Cancelled
+    b. Member accepts the amendment:
+        - If fully covered through self guarantee - Ready for Submission
+        - If not fully covered through self guarantee:
+            - He requests guarantors - In Progress
+            - Guarantors can edit the amount requested by the member
+            - Once fully covered, member submits the application - Ready for Submission
+5. Member submits the application (guarantor profile is committed and updated) - Submitted
+6. Admin approves the application - Approved
+7. If admin declines the application, guarantor profile is reverted - Declined
+
+Current implementation
+1. Member applies for loan:
+    - Pending: if cannot fully self guarantee
+    - Ready for Submission: if can fully self guarantee
+2. If Pending:
+    - Requests guarantors
+    - Guarantors accept and loan coverage updates. Guarantor Profile is committed and updated
+    - If fully covered; loan application - Ready for Submission
+3. Member submits the application - Submitted
+4. Admin approves or declines.
+5. If declined: guarantor profile is reverted

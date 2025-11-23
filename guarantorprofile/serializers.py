@@ -33,6 +33,8 @@ class GuarantorProfileSerializer(serializers.ModelSerializer):
             "max_active_guarantees",
             "active_guarantees_count",
             "committed_amount",
+            "committed_guarantee_amount",
+            "max_guarantee_amount",
             "available_amount",
             "has_reached_limit",
             "reference",

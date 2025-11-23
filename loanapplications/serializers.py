@@ -210,13 +210,18 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         instance = super().create(validated_data)
 
         instance.projection_snapshot = proj
+        instance.monthly_payment = validated_data["monthly_payment"]
+        instance.term_months = validated_data["term_months"]
         instance.total_interest = validated_data["total_interest"]
         instance.repayment_amount = validated_data["repayment_amount"]
         instance.save(
             update_fields=["projection_snapshot", "total_interest", "repayment_amount"]
         )
 
-        self._update_self_guarantee_and_status(instance)
+        # self._update_self_guarantee_and_status(instance)
+        # Initial status is always Pending
+        instance.status = "Pending"
+        instance.save(update_fields=["status"])
         return instance
 
     # ===================================================================
@@ -242,7 +247,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
                 ]
             )
 
-        self._update_self_guarantee_and_status(instance)
+        # self._update_self_guarantee_and_status(instance)
         return instance
 
     # ===================================================================
@@ -261,11 +266,12 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         instance.save(update_fields=["self_guaranteed_amount"])
         coverage = compute_loan_coverage(instance)
 
-        # Set status based on coverage
-        instance.status = (
-            "Ready for Submission" if coverage["is_fully_covered"] else "Pending"
-        )
-        instance.save(update_fields=["status"])
+        # Set status based on coverage ONLY if in appropriate state
+        if instance.status in ["In Progress", "Amended"]:
+            instance.status = (
+                "Ready for Submission" if coverage["is_fully_covered"] else "In Progress"
+            )
+            instance.save(update_fields=["status"])
 
     # ===================================================================
     # 7. SerializerMethodFields
