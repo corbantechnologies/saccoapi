@@ -135,6 +135,32 @@ class GuaranteeApprovalDeclineSerializer(serializers.ModelSerializer):
         model = GuaranteeRequest
         fields = ("status", "guaranteed_amount")
 
+    def validate(self, data):
+        if data.get("status") == "Accepted":
+            amount = data.get("guaranteed_amount")
+            if amount:
+                # 1. Positive amount
+                if amount <= Decimal("0"):
+                    raise serializers.ValidationError(
+                        {"guaranteed_amount": "Amount must be positive."}
+                    )
+
+                # 2. Check capacity
+                # Note: We are checking against the *current* committed amount.
+                # Since commitment is deferred to submission, this check ensures
+                # the guarantor at least has "room" on paper right now.
+                instance = self.instance
+                guarantor = instance.guarantor
+                available = guarantor.available_capacity()
+
+                if amount > available:
+                    raise serializers.ValidationError(
+                        {
+                            "guaranteed_amount": f"You only have {available} available guarantee limit."
+                        }
+                    )
+        return data
+
 
 class LoanApplicationGuaranteeRequestSerializer(serializers.ModelSerializer):
     member = serializers.CharField(source="member.member_no", read_only=True)

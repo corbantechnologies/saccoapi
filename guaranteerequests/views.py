@@ -80,10 +80,11 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
         new_status = serializer.validated_data["status"]
         old_status = instance.status
 
-        # 1. Only pending requests
-        if old_status != "Pending":
+        # 1. Check if update is allowed
+        allowed_statuses = ["Pending", "Accepted"]
+        if old_status not in allowed_statuses:
             raise serializers.ValidationError(
-                {"status": "Only pending requests can be updated."}
+                {"status": f"Cannot update request in '{old_status}' state."}
             )
 
         # 2. Loan not finalized
