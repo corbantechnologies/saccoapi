@@ -13,6 +13,8 @@ User = get_user_model()
 class LoanApplication(UniversalIdModel, TimeStampedModel, ReferenceModel):
     STATUS_CHOICES = [
         ("Pending", "Pending"),
+        ("Ready for Amendment", "Ready for Amendment"),
+        ("Amended", "Amended"),
         ("In Progress", "In Progress"),
         ("Ready for Submission", "Ready for Submission"),
         ("Submitted", "Submitted"),
@@ -63,7 +65,9 @@ class LoanApplication(UniversalIdModel, TimeStampedModel, ReferenceModel):
     self_guaranteed_amount = models.DecimalField(
         max_digits=15, decimal_places=2, default=0.00
     )
-    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="Pending")
+    status = models.CharField(
+        max_length=30, choices=STATUS_CHOICES, default="Ready for Amendment"
+    )
     loan_account = models.ForeignKey(
         LoanAccount,
         on_delete=models.PROTECT,

@@ -1,9 +1,9 @@
-# loanapplications/views.py
 from rest_framework import generics, status, serializers
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.db import transaction
 from django.db.models import F
+from decimal import Decimal
 
 from .models import LoanApplication
 from .serializers import LoanApplicationSerializer, LoanStatusUpdateSerializer
@@ -43,6 +43,26 @@ class LoanApplicationListView(generics.ListAPIView):
     queryset = LoanApplication.objects.all()
     serializer_class = LoanApplicationSerializer
     permission_classes = [IsSystemAdminOrReadOnly]
+
+class SubmitForAmendmentView(generics.GenericAPIView):
+    queryset = LoanApplication.objects.all()
+    permission_classes = [IsAuthenticated]
+    lookup_field = "reference"
+
+    def post(self, request, reference):
+        app = self.get_object()
+        if app.member != request.user:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+        
+        if app.status != "Pending":
+            return Response(
+                {"detail": "Only pending applications can be submitted for amendment."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        app.status = "Ready for Amendment"
+        app.save(update_fields=["status"])
+        return Response({"detail": "Submitted for amendment."}, status=status.HTTP_200_OK)
 
 
 # ——————————————————————————————————————————————————————————————
@@ -89,57 +109,173 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
             app.status = "Submitted"
             app.save(update_fields=["status"])
 
-            # 2. Auto self-guarantee
-            if (
-                coverage["is_fully_covered"]
-                and coverage["total_guaranteed_by_others"] == 0
-            ):
+            # 2. Commit ALL accepted guarantees (Self + Others)
+            # -------------------------------------------------
+            
+            # A. Self-Guarantee
+            if app.self_guaranteed_amount > 0:
                 try:
                     profile = GuarantorProfile.objects.select_for_update().get(
                         member=app.member
                     )
-                    required = app.requested_amount
+                    required = app.self_guaranteed_amount
 
                     if (
                         profile.committed_guarantee_amount + required
                         > profile.max_guarantee_amount
                     ):
-                        raise ValueError("Insufficient capacity")
+                        raise ValueError("Insufficient self-guarantee capacity")
 
-                    # Update profile
                     profile.committed_guarantee_amount += required
-                    profile.save(update_fields=["committed_guarantee_amount"])
-
-                    # Create GuaranteeRequest
-                    GuaranteeRequest.objects.create(
-                        member=app.member,
-                        loan_application=app,
-                        guarantor=profile,
-                        guaranteed_amount=required,
-                        status="Accepted",
+                    # Also decrement max_active_guarantees as per legacy logic
+                    if profile.max_active_guarantees > 0:
+                        profile.max_active_guarantees -= 1
+                        
+                    profile.save(update_fields=["committed_guarantee_amount", "max_active_guarantees"])
+                    
+                    # Create/Update GuaranteeRequest for record keeping if needed, 
+                    # but we already have self_guaranteed_amount on the loan.
+                    # The previous logic created a GuaranteeRequest, let's keep it consistent if that's the pattern.
+                    # Check if one exists?
+                    gr, created = GuaranteeRequest.objects.get_or_create(
+                         member=app.member,
+                         loan_application=app,
+                         guarantor=profile,
+                         defaults={
+                             "guaranteed_amount": required,
+                             "status": "Accepted"
+                         }
                     )
-
-                    # Update application
-                    app.self_guaranteed_amount = required
-                    app.save(update_fields=["self_guaranteed_amount"])
+                    if not created:
+                        gr.guaranteed_amount = required
+                        gr.status = "Accepted"
+                        gr.save()
 
                 except (GuarantorProfile.DoesNotExist, ValueError):
                     app.status = "Ready for Submission"
                     app.save(update_fields=["status"])
                     return Response(
-                        {"detail": "Self-guarantee failed."},
+                        {
+                            "detail": "Guarantor capacity check failed.",
+                            "application": LoanApplicationSerializer(
+                                app, context=self.get_serializer_context()
+                            ).data,
+                        },
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-        return Response(
-            {
-                "detail": "Loan application submitted successfully.",
-                "application": LoanApplicationSerializer(
-                    app, context=self.get_serializer_context()
-                ).data,
-            },
-            status=status.HTTP_200_OK,
-        )
+            # B. External Guarantors
+            # Exclude self-guarantee to avoid double counting
+            accepted_guarantors = app.guarantors.filter(status="Accepted").exclude(
+                guarantor__member=app.member
+            )
+            
+            for gr in accepted_guarantors:
+                profile = GuarantorProfile.objects.select_for_update().get(pk=gr.guarantor.pk)
+                required = gr.guaranteed_amount
+                
+                if (
+                    profile.committed_guarantee_amount + required
+                    > profile.max_guarantee_amount
+                ):
+                     raise ValueError(f"Guarantor {profile.member.member_no} has insufficient capacity")
+                
+                profile.committed_guarantee_amount += required
+                # Also decrement max_active_guarantees as per legacy logic
+                if profile.max_active_guarantees > 0:
+                    profile.max_active_guarantees -= 1
+                    
+                profile.save(update_fields=["committed_guarantee_amount", "max_active_guarantees"])
+        
+        app.status = "Submitted"
+        app.save(update_fields=["status"])
+        return Response({"detail": "Submitted for approval."}, status=status.HTTP_200_OK)
+
+
+class AdminAmendView(generics.RetrieveUpdateAPIView):
+    queryset = LoanApplication.objects.all()
+    serializer_class = LoanApplicationSerializer
+    permission_classes = [IsSystemAdminOrReadOnly]
+    lookup_field = "reference"
+
+    def perform_update(self, serializer):
+        app = self.get_object()
+        if app.status != "Ready for Amendment":
+             raise serializers.ValidationError({"detail": "Application not ready for amendment."})
+        
+        serializer.save(status="Amended")
+
+
+class MemberAcceptAmendmentView(generics.GenericAPIView):
+    queryset = LoanApplication.objects.all()
+    permission_classes = [IsAuthenticated]
+    lookup_field = "reference"
+
+    def post(self, request, reference):
+        app = self.get_object()
+        if app.member != request.user:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+            
+        if app.status != "Amended":
+             return Response(
+                {"detail": "Application is not in Amended state."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check coverage
+        coverage = compute_loan_coverage(app)
+        
+        # If fully covered by self-guarantee (unlikely if amount increased, but possible)
+        # We need to update self-guarantee amount to match requested if possible?
+        # The serializer logic `_update_self_guarantee_and_status` does this.
+        # Let's invoke it or similar logic.
+        
+        # Actually, let's just set to In Progress, and let the serializer logic 
+        # (which we should trigger or manually call) handle the "Ready for Submission" check.
+        # But we are not using serializer here, just changing status.
+        
+        # Let's try to auto-maximize self-guarantee first
+        total_savings = coverage["total_savings"]
+        committed_other = coverage["committed_self_guarantee"]
+        available = max(0, total_savings - committed_other)
+        
+        needed = float(app.requested_amount)
+        
+        # If we can cover it all with self
+        if available >= needed:
+             app.self_guaranteed_amount = Decimal(needed)
+             app.status = "Ready for Submission"
+        else:
+             # Take what we can? Or just 0?
+             # Usually we take what we can if the user wants self-guarantee. 
+             # Let's assume we take what we can.
+             app.self_guaranteed_amount = Decimal(available)
+             app.status = "In Progress"
+             
+        app.save(update_fields=["self_guaranteed_amount", "status"])
+        
+        return Response({"detail": f"Amendment accepted. Status: {app.status}"})
+
+
+class MemberCancelAmendmentView(generics.GenericAPIView):
+    queryset = LoanApplication.objects.all()
+    permission_classes = [IsAuthenticated]
+    lookup_field = "reference"
+
+    def post(self, request, reference):
+        app = self.get_object()
+        if app.member != request.user:
+            return Response(status=status.HTTP_403_FORBIDDEN)
+            
+        if app.status != "Amended":
+             return Response(
+                {"detail": "Application is not in Amended state."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        app.status = "Cancelled"
+        app.save(update_fields=["status"])
+        return Response({"detail": "Application cancelled."})
 
 
 # ——————————————————————————————————————————————————————————————

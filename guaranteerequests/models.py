@@ -33,7 +33,6 @@ class GuaranteeRequest(TimeStampedModel, UniversalIdModel, ReferenceModel):
     class Meta:
         verbose_name = "Guarantee Request"
         verbose_name_plural = "Guarantee Requests"
-        unique_together = ("loan_application", "guarantor")
         ordering = ["-created_at"]
 
     def __str__(self):
