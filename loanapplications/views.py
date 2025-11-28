@@ -71,6 +71,9 @@ class SubmitForAmendmentView(generics.GenericAPIView):
 # 2. Submit Application (Member) — Link to Existing LoanAccount
 # ——————————————————————————————————————————————————————————————
 class SubmitLoanApplicationView(generics.GenericAPIView):
+    """
+    Submit a loan application for final approval.
+    """
     queryset = LoanApplication.objects.all()
     serializer_class = LoanApplicationSerializer
     permission_classes = [IsAuthenticated]
@@ -191,6 +194,8 @@ class SubmitLoanApplicationView(generics.GenericAPIView):
         
         app.status = "Submitted"
         app.save(update_fields=["status"])
+        
+        send_admin_loan_application_status_email(app)
         return Response({"detail": "Submitted for approval."}, status=status.HTTP_200_OK)
 
 
@@ -206,6 +211,8 @@ class AdminAmendView(generics.RetrieveUpdateAPIView):
              raise serializers.ValidationError({"detail": "Application not ready for amendment."})
         
         serializer.save(status="Amended")
+        send_loan_application_status_email(app)
+        return Response({"detail": "Amended successfully."}, status=status.HTTP_200_OK)
 
 
 class MemberAcceptAmendmentView(generics.GenericAPIView):
@@ -388,6 +395,9 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
                 app, context=self.get_serializer_context()
             ).data,
         }
+
+        if app.member.email:
+            send_loan_application_status_email(app)
 
         return Response(data, status=status.HTTP_200_OK)
 

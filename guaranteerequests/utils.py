@@ -1,5 +1,6 @@
 import resend
 from datetime import datetime
+from guaranteerequests.models import GuaranteeRequest
 
 current_year = datetime.now().year
 

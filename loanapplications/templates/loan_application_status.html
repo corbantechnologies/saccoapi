@@ -22,7 +22,8 @@
             {% if status == 'Submitted' %}
                 <p>Your application has been successfully submitted and is pending review.</p>
             {% elif status == 'Amended' %}
-                <p>Your application has been amended. You can now request guarantors if your loan is not fully covered.</p>
+                <p>Your application has been amended. <br/>
+                    Once you accept the amendments, you can now request guarantors if your loan is not fully covered.</p>
             {% elif status == 'Fully Covered' %}
                 <p>Your loan is fully covered! It is now ready for final approval.</p>
             {% elif status == 'Approved' %}

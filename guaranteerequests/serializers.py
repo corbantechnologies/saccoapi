@@ -5,6 +5,7 @@ from guaranteerequests.models import GuaranteeRequest
 from loanapplications.models import LoanApplication
 from guarantorprofile.models import GuarantorProfile
 from loanapplications.utils import compute_loan_coverage
+from guaranteerequests.utils import send_guarantor_guarantee_request_status_email
 
 
 class GuaranteeRequestSerializer(serializers.ModelSerializer):
@@ -120,6 +121,9 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
             if compute_loan_coverage(loan)["is_fully_covered"]:
                 loan.status = "Ready for Submission"
                 loan.save(update_fields=["status"])
+        
+        if instance.guarantor.member.email:
+            send_guarantor_guarantee_request_status_email(instance)
 
         return instance
 

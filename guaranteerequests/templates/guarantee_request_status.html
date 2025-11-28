@@ -50,7 +50,7 @@
             <div class="content">
                 <p>Dear {{ applicant.first_name }},</p>
                 <p>Your guarantee request to <strong>{{ guarantor.first_name }} {{ guarantor.last_name }}</strong> for
-                    loan application (Ref: {{ application.loan_number }}) has been <strong>{{ status }}</strong>.</p>
+                    loan application (Ref: {{ application.reference }}) has been <strong>{{ status }}</strong>.</p>
 
                 {% if status == 'Accepted' %}
                 <p>The guarantor has accepted to guarantee <strong>{{ amount }}</strong>.</p>
