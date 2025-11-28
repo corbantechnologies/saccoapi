@@ -13,6 +13,7 @@ from .serializers import (
     GuaranteeApprovalDeclineSerializer,
 )
 from loanapplications.utils import compute_loan_coverage
+from guaranteerequests.utils import send_guarantee_request_status_email
 
 
 class GuaranteeRequestListCreateView(generics.ListCreateAPIView):
@@ -133,5 +134,8 @@ class GuaranteeRequestUpdateStatusView(generics.UpdateAPIView):
             if instance.guarantor.member == loan_app.member:
                 loan_app.self_guaranteed_amount = Decimal("0")
                 loan_app.save(update_fields=["self_guaranteed_amount"])
+
+        if instance.member.email:
+            send_guarantee_request_status_email(instance)
 
         return Response(status=status.HTTP_200_OK, data=serializer.data)
