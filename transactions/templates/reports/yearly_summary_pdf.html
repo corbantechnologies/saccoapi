@@ -6,14 +6,8 @@
         <title>{{ member.member_no }} - Financial Summary {{ year }}</title>
         <style>
             @page {
-                size: A4;
-                margin: 1.2cm;
-
-                @top-center {
-                    content: "Tamarind SACCO";
-                    font-size: 10pt;
-                    font-weight: bold;
-                }
+                size: A4 landscape;
+                margin: 1cm;
 
                 @bottom-center {
                     content: "Page " counter(page) " of " counter(pages);
@@ -25,8 +19,8 @@
             body {
                 font-family: 'Segoe UI', Tahoma, sans-serif;
                 color: #333;
-                line-height: 1.5;
-                font-size: 11pt;
+                line-height: 1.3;
+                font-size: 9pt;
             }
 
             .container {
@@ -35,37 +29,37 @@
 
             .header {
                 text-align: center;
-                margin-bottom: 25px;
-                padding-bottom: 15px;
-                border-bottom: 3px solid #1e40af;
+                margin-bottom: 15px;
+                padding-bottom: 10px;
+                border-bottom: 2px solid #1e40af;
             }
 
             .logo {
-                height: 70px;
-                margin-bottom: 10px;
+                height: 50px;
+                margin-bottom: 5px;
             }
 
             .title {
                 margin: 0;
-                font-size: 26px;
+                font-size: 20px;
                 color: #1e40af;
             }
 
             .subtitle {
-                margin: 8px 0;
-                font-size: 14px;
+                margin: 4px 0;
+                font-size: 12px;
                 color: #666;
             }
 
             .info-box {
                 background: #f8f9fa;
-                padding: 15px;
-                border-radius: 8px;
-                margin: 20px 0;
+                padding: 10px;
+                border-radius: 6px;
+                margin: 10px 0;
                 display: flex;
                 justify-content: space-between;
                 flex-wrap: wrap;
-                font-size: 12pt;
+                font-size: 10pt;
             }
 
             .info-label {
@@ -73,75 +67,58 @@
                 color: #1e40af;
             }
 
+            /* Table Styles */
             table {
                 width: 100%;
                 border-collapse: collapse;
-                margin: 18px 0;
-                font-size: 10pt;
+                margin: 10px 0;
+                font-size: 8pt;
+            }
+
+            th,
+            td {
+                border: 1px solid #e5e7eb;
+                padding: 4px 6px;
+                text-align: right;
             }
 
             th {
-                background: #1e40af;
-                color: white;
-                padding: 10px 8px;
-                text-align: left;
+                background: #f3f4f6;
+                color: #111827;
                 font-weight: 600;
-                font-size: 10pt;
+                text-align: center;
+                vertical-align: bottom;
             }
 
-            td {
-                padding: 8px;
-                border-bottom: 1px solid #eee;
-                vertical-align: top;
+            .th-section {
+                background: #1e40af;
+                color: white;
+                border-color: #1e40af;
+            }
+
+            .th-type {
+                background: #e5e7eb;
+            }
+
+            .month-col {
+                text-align: left;
+                font-weight: 600;
+                background: #f9fafb;
+                white-space: nowrap;
             }
 
             .total-row td {
                 background: #f0f7ff;
                 font-weight: bold;
-                font-size: 11pt;
-            }
-
-            .section {
-                margin-top: 35px;
-                page-break-inside: avoid;
-            }
-
-            .section h3 {
-                color: #1e40af;
-                border-bottom: 2px solid #3b82f6;
-                padding-bottom: 8px;
-                margin-bottom: 15px;
-                font-size: 16pt;
-            }
-
-            .tx-list {
-                margin: 8px 0;
-                padding-left: 20px;
-            }
-
-            .tx-item {
-                margin: 4px 0;
-                font-size: 9pt;
-            }
-
-            .tx-amount {
-                font-weight: 600;
-                color: #16a34a;
             }
 
             .footer {
-                margin-top: 50px;
+                margin-top: 20px;
                 text-align: center;
-                font-size: 10px;
+                font-size: 8px;
                 color: #888;
                 border-top: 1px solid #eee;
-                padding-top: 15px;
-            }
-
-            @media print {
-                body {
-                    -webkit-print-color-adjust: exact;
-                }
+                padding-top: 10px;
             }
         </style>
     </head>
@@ -165,256 +142,91 @@
                 <div><span class="info-label">Phone:</span> {{ member.phone|default:"N/A" }}</div>
             </div>
 
-            <!-- Monthly Breakdown -->
-            {% for month in data.monthly_summary %}
-            <div class="section">
-                <h3>{{ month.month }}</h3>
+            <!-- MAIN SUMMARY TABLE -->
+            <table>
+                <thead>
+                    <!-- Level 1: Section Headers -->
+                    <tr>
+                        <th rowspan="3" class="th-section" style="vertical-align: middle; width: 60px;">Month</th>
+                        {% if savings_types %}
+                        <th colspan="{{ savings_types|length|add:savings_types|length }}" class="th-section">Savings
+                        </th>
+                        {% endif %}
+                        {% if venture_types %}
+                        <th colspan="{{ venture_types|length|add:venture_types|length|add:venture_types|length }}"
+                            class="th-section">Ventures</th>
+                        {% endif %}
+                        {% if loan_types %}
+                        <th colspan="{{ loan_types|length|add:loan_types|length|add:loan_types|length|add:loan_types|length }}"
+                            class="th-section">Loans</th>
+                        {% endif %}
+                    </tr>
 
-                <!-- Savings -->
-                <table>
+                    <!-- Level 2: Type Headers -->
                     <tr>
-                        <th colspan="3">Savings</th>
+                        {% for t in savings_types %}
+                        <th colspan="2" class="th-type">{{ t }}</th>
+                        {% endfor %}
+
+                        {% for t in venture_types %}
+                        <th colspan="3" class="th-type">{{ t }}</th>
+                        {% endfor %}
+
+                        {% for t in loan_types %}
+                        <th colspan="4" class="th-type">{{ t }}</th>
+                        {% endfor %}
                     </tr>
+
+                    <!-- Level 3: Column Labels -->
                     <tr>
-                        <th>Type</th>
-                        <th>Amount</th>
-                        <th>Deposits</th>
+                        {% for t in savings_types %}
+                        <th>Dep</th>
+                        <th>Bal</th>
+                        {% endfor %}
+
+                        {% for t in venture_types %}
+                        <th>Dep</th>
+                        <th>Pay</th>
+                        <th>Bal</th>
+                        {% endfor %}
+
+                        {% for t in loan_types %}
+                        <th>Disb</th>
+                        <th>Rep</th>
+                        <th>Int</th>
+                        <th>Out</th>
+                        {% endfor %}
                     </tr>
-                    {% for s in month.savings.by_type %}
+                </thead>
+                <tbody>
+                    {% for row in table_rows %}
                     <tr>
-                        <td><strong>{{ s.type }}</strong></td>
-                        <td><strong>{{ s.amount|floatformat:2 }}</strong></td>
-                        <td>
-                            <div class="tx-list">
-                                {% for d in s.deposits %}
-                                <div class="tx-item">
-                                    {{ d.type }}: <span class="tx-amount">KES {{ d.amount|floatformat:2 }}</span>
-                                </div>
-                                {% empty %}
-                                <em>No deposits</em>
-                                {% endfor %}
-                            </div>
-                        </td>
+                        <td class="month-col">{{ row.month }}</td>
+
+                        <!-- Savings -->
+                        {% for s in row.savings %}
+                        <td>{{ s.dep|floatformat:2 }}</td>
+                        <td>{{ s.bal|floatformat:2 }}</td>
+                        {% endfor %}
+
+                        <!-- Ventures -->
+                        {% for v in row.ventures %}
+                        <td>{{ v.dep|floatformat:2 }}</td>
+                        <td>{{ v.pay|floatformat:2 }}</td>
+                        <td>{{ v.bal|floatformat:2 }}</td>
+                        {% endfor %}
+
+                        <!-- Loans -->
+                        {% for l in row.loans %}
+                        <td>{{ l.disb|floatformat:2 }}</td>
+                        <td>{{ l.rep|floatformat:2 }}</td>
+                        <td>{{ l.int|floatformat:2 }}</td>
+                        <td>{{ l.out|floatformat:2 }}</td>
+                        {% endfor %}
                     </tr>
                     {% endfor %}
-                    <tr class="total-row">
-                        <td><strong>Total Savings</strong></td>
-                        <td colspan="2"><strong>KES {{ month.savings.total_savings|floatformat:2 }}</strong></td>
-                    </tr>
-                </table>
-
-                <!-- Ventures -->
-                <table>
-                    <tr>
-                        <th colspan="4">Ventures</th>
-                    </tr>
-                    <tr>
-                        <th>Type</th>
-                        <th>Deposits</th>
-                        <th>Payments</th>
-                        <th>Net</th>
-                    </tr>
-                    {% for v in month.ventures.by_type %}
-                    {% with dep_total=0 %}
-                    {% for d in v.venture_deposits %}{% with dep_total=dep_total|add:d.amount %}{% endwith %}{% endfor %}
-                    {% with pay_total=0 %}
-                    {% for p in v.venture_payments %}{% with pay_total=pay_total|add:p.amount %}{% endwith %}{% endfor %}
-                    {% with net=dep_total|add:pay_total|floatformat:2 %}
-                    <tr>
-                        <td><strong>{{ v.venture_type }}</strong></td>
-                        <td>
-                            <div class="tx-list">
-                                {% for d in v.venture_deposits %}
-                                <div class="tx-item"><span class="tx-amount">+{{ d.amount|floatformat:2 }}</span></div>
-                                {% empty %}
-                                <em>None</em>
-                                {% endfor %}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="tx-list">
-                                {% for p in v.venture_payments %}
-                                <div class="tx-item"><span class="tx-amount">-{{ p.amount|floatformat:2 }}</span></div>
-                                {% empty %}
-                                <em>None</em>
-                                {% endfor %}
-                            </div>
-                        </td>
-                        <td><strong>KES {{ net }}</strong></td>
-                    </tr>
-                    {% endwith %}
-                    {% endwith %}
-                    {% endwith %}
-                    {% endfor %}
-                    <tr class="total-row">
-                        <td><strong>Net Ventures</strong></td>
-                        <td colspan="3"><strong>KES {{ month.ventures.net_venture|floatformat:2 }}</strong></td>
-                    </tr>
-                </table>
-
-                <!-- Loans -->
-                <table>
-                    <tr>
-                        <th colspan="5">Loans</th>
-                    </tr>
-                    <tr>
-                        <th>Type</th>
-                        <th>Disbursed</th>
-                        <th>Repaid</th>
-                        <th>Interest</th>
-                        <th>Outstanding</th>
-                    </tr>
-                    {% for l in month.loans.by_type %}
-                    <tr>
-                        <td><strong>{{ l.loan_type }}</strong></td>
-                        <td>
-                            <div class="tx-list">
-                                {% for d in l.total_amount_disbursed %}
-                                <div class="tx-item"><span class="tx-amount">+{{ d.amount|floatformat:2 }}</span></div>
-                                {% empty %}
-                                <em>None</em>
-                                {% endfor %}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="tx-list">
-                                {% for r in l.total_amount_repaid %}
-                                <div class="tx-item"><span class="tx-amount">-{{ r.amount|floatformat:2 }}</span></div>
-                                {% empty %}
-                                <em>None</em>
-                                {% endfor %}
-                            </div>
-                        </td>
-                        <td>
-                            <div class="tx-list">
-                                {% for i in l.total_interest_charged %}
-                                <div class="tx-item"><span class="tx-amount">{{ i.amount|floatformat:2 }}</span></div>
-                                {% empty %}
-                                <em>None</em>
-                                {% endfor %}
-                            </div>
-                        </td>
-                        <td><strong>KES {{ l.total_amount_outstanding|floatformat:2 }}</strong></td>
-                    </tr>
-                    {% endfor %}
-                    <tr class="total-row">
-                        <td><strong>Totals</strong></td>
-                        <td><strong>{{ month.loans.total_loans_disbursed|floatformat:2 }}</strong></td>
-                        <td><strong>{{ month.loans.total_loans_repaid|floatformat:2 }}</strong></td>
-                        <td><strong>{{ month.loans.total_interest_charged|floatformat:2 }}</strong></td>
-                        <td><strong>{{ month.loans.total_loans_outstanding|floatformat:2 }}</strong></td>
-                    </tr>
-                </table>
-            </div>
-            {% endfor %}
-
-            <!-- YEARLY SUMMARY -->
-            <div class="section">
-                <h3>Yearly Summary ({{ year }})</h3>
-                <table>
-                    <tr>
-                        <th>Category</th>
-                        <th>Amount (KES)</th>
-                    </tr>
-                    <tr>
-                        <td>Total Savings</td>
-                        <td class="total-row">{{ data.summary.total_savings|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Venture Deposits</td>
-                        <td>{{ data.summary.total_venture_deposits|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Venture Payments</td>
-                        <td>{{ data.summary.total_venture_payments|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Net Ventures</td>
-                        <td class="total-row">{{ data.summary.total_ventures_net|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Loans Disbursed</td>
-                        <td>{{ data.summary.total_loans_disbursed|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Loans Repaid</td>
-                        <td>{{ data.summary.total_loans_repaid|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Interest Charged</td>
-                        <td>{{ data.summary.total_interest_charged|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Outstanding Loans</td>
-                        <td class="total-row">{{ data.summary.total_loans_outstanding|floatformat:2 }}</td>
-                    </tr>
-                </table>
-            </div>
-
-            <!-- CHART OF ACCOUNTS -->
-            <div class="section">
-                <h3>Chart of Accounts</h3>
-                <table>
-                    <tr>
-                        <th>Account</th>
-                        <th>Amount (KES)</th>
-                    </tr>
-                    <tr>
-                        <td>Total Savings</td>
-                        <td>{{ data.chart_of_accounts.total_savings|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Total Ventures (Net)</td>
-                        <td>{{ data.chart_of_accounts.total_ventures|floatformat:2 }}</td>
-                    </tr>
-                    <tr>
-                        <td>Total Loans Outstanding</td>
-                        <td>{{ data.chart_of_accounts.total_loans|floatformat:2 }}</td>
-                    </tr>
-                </table>
-
-                <h4>Savings by Type</h4>
-                <table>
-                    <tr>
-                        <th>Type</th>
-                        <th>Amount</th>
-                    </tr>
-                    {% for s in data.chart_of_accounts.total_savings_by_type %}
-                    <tr>
-                        <td>{{ s.type }}</td>
-                        <td>{{ s.amount|floatformat:2 }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-
-                <h4>Ventures by Type</h4>
-                <table>
-                    <tr>
-                        <th>Type</th>
-                        <th>Net</th>
-                    </tr>
-                    {% for v in data.chart_of_accounts.total_ventures_by_type %}
-                    <tr>
-                        <td>{{ v.venture_type }}</td>
-                        <td>{{ v.net_amount|floatformat:2 }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-
-                <h4>Loans by Type</h4>
-                <table>
-                    <tr>
-                        <th>Type</th>
-                        <th>Outstanding</th>
-                    </tr>
-                    {% for l in data.chart_of_accounts.total_loans_by_type %}
-                    <tr>
-                        <td>{{ l.loan_type }}</td>
-                        <td>{{ l.total_outstanding_amount|floatformat:2 }}</td>
-                    </tr>
-                    {% endfor %}
-                </table>
-            </div>
+                </tbody>
+            </table>
 
             <!-- Footer -->
             <div class="footer">

@@ -819,7 +819,7 @@ class MemberYearlySummaryView(APIView):
 # ------------------------------------------------------------------
 # Async PDF Generator (Playwright)
 # ------------------------------------------------------------------
-async def generate_pdf(html_content: str, logo_url: str):
+async def generate_pdf(html_content: str, logo_url: str, landscape: bool = False):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
@@ -833,14 +833,10 @@ async def generate_pdf(html_content: str, logo_url: str):
         # Generate PDF with header/footer
         pdf_bytes = await page.pdf(
             format="A4",
+            landscape=landscape,
             print_background=True,
             margin={"top": "1.2cm", "bottom": "1.2cm", "left": "1cm", "right": "1cm"},
             display_header_footer=True,
-            header_template="""
-                <div style="font-size:10px; text-align:center; width:100%; padding:8px 0; border-bottom:1px solid #eee;">
-                    <strong>Wananchi Mali SACCO</strong>
-                </div>
-            """,
             footer_template="""
                 <div style="font-size:9px; text-align:center; width:100%; padding:5px 0; border-top:1px solid #eee; color:#666;">
                     Page <span class="pageNumber"></span> of <span class="totalPages"></span> 
@@ -875,6 +871,83 @@ class MemberYearlySummaryPDFView(APIView):
         json_view.request = request
         data = json_view.get(request, member_no).data
 
+        # --- PRE-PROCESS DATA FOR PDF TABLE ---
+        monthly_summary = data.get("monthly_summary", [])
+        
+        # 1. Extract Unique Types
+        savings_types = set()
+        venture_types = set()
+        loan_types = set()
+
+        for m in monthly_summary:
+            for s in m["savings"]["by_type"]:
+                savings_types.add(s["type"])
+            for v in m["ventures"]["by_type"]:
+                venture_types.add(v["venture_type"])
+            for l in m["loans"]["by_type"]:
+                loan_types.add(l["loan_type"])
+        
+        savings_types = sorted(list(savings_types))
+        venture_types = sorted(list(venture_types))
+        loan_types = sorted(list(loan_types))
+
+        # 2. Build Table Rows
+        table_rows = []
+        for m in monthly_summary:
+            row = {
+                "month": m["month"].split(" ")[0], # Just month name
+                "savings": [],
+                "ventures": [],
+                "loans": []
+            }
+
+            # Savings Columns
+            s_map = {item["type"]: item for item in m["savings"]["by_type"]}
+            for st in savings_types:
+                item = s_map.get(st)
+                if item:
+                    row["savings"].append({
+                        "dep": item["amount"],
+                        "bal": item["balance_carried_forward"]
+                    })
+                else:
+                    # Find previous balance if possible? 
+                    # For simplicity, if no transaction/balance record in this month's summary, 
+                    # we might need to look at the running balance logic.
+                    # However, the JSON view returns ALL types for every month with brought/carried forward.
+                    # So item should exist if the type exists in all_savings_types in the view.
+                    # Let's assume 0 if missing (though view logic suggests it shouldn't be missing).
+                    row["savings"].append({"dep": 0, "bal": 0})
+
+            # Venture Columns
+            v_map = {item["venture_type"]: item for item in m["ventures"]["by_type"]}
+            for vt in venture_types:
+                item = v_map.get(vt)
+                if item:
+                    row["ventures"].append({
+                        "dep": item["total_venture_deposits"],
+                        "pay": item["total_venture_payments"],
+                        "bal": item["balance_carried_forward"]
+                    })
+                else:
+                    row["ventures"].append({"dep": 0, "pay": 0, "bal": 0})
+
+            # Loan Columns
+            l_map = {item["loan_type"]: item for item in m["loans"]["by_type"]}
+            for lt in loan_types:
+                item = l_map.get(lt)
+                if item:
+                    row["loans"].append({
+                        "disb": item["total_amount_disbursed"],
+                        "rep": item["total_amount_repaid"],
+                        "int": item["total_interest_charged"],
+                        "out": item["total_amount_outstanding"]
+                    })
+                else:
+                    row["loans"].append({"disb": 0, "rep": 0, "int": 0, "out": 0})
+            
+            table_rows.append(row)
+
         # Cloudinary logo URL
         logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
 
@@ -887,12 +960,17 @@ class MemberYearlySummaryPDFView(APIView):
                 "year": year,
                 "logo_url": logo_url,
                 "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+                # New Context
+                "savings_types": savings_types,
+                "venture_types": venture_types,
+                "loan_types": loan_types,
+                "table_rows": table_rows,
             },
         )
 
         # Generate PDF
         try:
-            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url))
+            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url, landscape=True))
         except Exception as e:
             logger.error(f"PDF generation failed for {member_no}: {e}")
             return Response({"error": "Failed to generate PDF"}, status=500)
