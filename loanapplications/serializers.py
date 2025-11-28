@@ -15,6 +15,7 @@ from guarantorprofile.models import GuarantorProfile
 from loanapplications.utils import compute_loan_coverage
 from loans.serializers import MinimalLoanAccountSerializer
 from guaranteerequests.serializers import LoanApplicationGuaranteeRequestSerializer
+from loanapplications.utils import send_admin_loan_application_status_email, send_loan_application_status_email
 
 
 class LoanApplicationSerializer(serializers.ModelSerializer):
@@ -222,6 +223,8 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         # Initial status is always Pending
         instance.status = "Pending"
         instance.save(update_fields=["status"])
+        if instance.member.email:
+            send_loan_application_status_email(instance)
         return instance
 
     # ===================================================================

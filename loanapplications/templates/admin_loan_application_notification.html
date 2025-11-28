@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+        <title>Loan Application Notification</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f4f4f4;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                max-width: 600px;
+                margin: 20px auto;
+                background: #ffffff;
+                border-radius: 8px;
+                overflow: hidden;
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            }
+
+            .header {
+                background-color: #ff9800;
+                color: white;
+                text-align: center;
+                padding: 20px;
+            }
+
+            .content {
+                padding: 20px;
+                color: #333;
+            }
+
+            .footer {
+                text-align: center;
+                background-color: #f4f4f4;
+                color: #777;
+                padding: 10px;
+                font-size: 12px;
+            }
+        </style>
+    </head>
+
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div class="container">
+            <div class="header">
+                <h2>Loan Application Action Required</h2>
+            </div>
+            <div class="content">
+                <p>Hello Admin,</p>
+                <p>A loan application (Ref: {{ application.reference }}) from {{ user.first_name }} {{ user.last_name }} requires your attention.</p>
+                <p>Current Status: <strong>{{ status }}</strong></p>
+
+                {% if status == 'Submitted' %}
+                <p>The application has been submitted for final review.</p>
+                {% elif status == 'Ready for Amendment' %}
+                <p>The application has been submitted for amendment by the member.</p>
+                {% endif %}
+
+                <p>Please log in to the admin panel to review and take action.</p>
+            </div>
+            <div class="footer">
+                <p>&copy; {{ current_year }} SACCO. All rights reserved.</p>
+            </div>
+        </div>
+    </body>
+
+</html>

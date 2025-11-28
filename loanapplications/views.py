@@ -11,7 +11,8 @@ from accounts.permissions import IsSystemAdminOrReadOnly
 from guaranteerequests.models import GuaranteeRequest
 from guarantorprofile.models import GuarantorProfile
 from loans.models import LoanAccount
-from .utils import compute_loan_coverage
+from loanapplications.utils import compute_loan_coverage, send_admin_loan_application_status_email, send_loan_application_status_email
+
 
 
 # ——————————————————————————————————————————————————————————————
@@ -61,6 +62,7 @@ class SubmitForAmendmentView(generics.GenericAPIView):
             )
             
         app.status = "Ready for Amendment"
+        send_admin_loan_application_status_email(app)
         app.save(update_fields=["status"])
         return Response({"detail": "Submitted for amendment."}, status=status.HTTP_200_OK)
 

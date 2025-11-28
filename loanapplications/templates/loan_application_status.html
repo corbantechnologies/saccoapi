@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Loan Application Status</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .header { background-color: #ff9800; color: white; text-align: center; padding: 20px; }
+        .content { padding: 20px; color: #333; }
+        .footer { text-align: center; background-color: #f4f4f4; color: #777; padding: 10px; font-size: 12px; }
+    </style>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+    <div class="container">
+        <div class="header">
+            <h2>Loan Application Update</h2>
+        </div>
+        <div class="content">
+            <p>Dear {{ user.first_name }} - {{ user.member_no}},</p>
+            <p>Your loan application (Ref: {{ application.reference }}) status has been updated to: <strong>{{ status }}</strong>.</p>
+            
+            {% if status == 'Submitted' %}
+                <p>Your application has been successfully submitted and is pending review.</p>
+            {% elif status == 'Amended' %}
+                <p>Your application has been amended. You can now request guarantors if your loan is not fully covered.</p>
+            {% elif status == 'Fully Covered' %}
+                <p>Your loan is fully covered! It is now ready for final approval.</p>
+            {% elif status == 'Approved' %}
+                <p>Congratulations! Your loan application has been approved and is ready for disbursement.</p>
+            {% elif status == 'Disbursed' %}
+                <p>Your loan has been disbursed. Please check your account.</p>
+            {% elif status == 'Rejected' %}
+                <p>We regret to inform you that your loan application has been rejected.</p>
+            {% elif status == 'Cancelled' %}
+                <p>You have cancelled your loan application.</p>
+            {% elif status == 'Pending' %}
+                <p>Your loan application has been successfully created and is ready for submission for amendment whenever you are ready.<br/>
+                    During this stage, you can modify your loan application details or submit it for amendment.
+                </p>    
+            {% endif %}
+
+            <p>If you have any questions, please contact us.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; {{ current_year }} SACCO. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
