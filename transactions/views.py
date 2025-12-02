@@ -835,20 +835,7 @@ async def generate_pdf(html_content: str, logo_url: str):
             format="A4",
             print_background=True,
             margin={"top": "1.2cm", "bottom": "1.2cm", "left": "1cm", "right": "1cm"},
-            display_header_footer=True,
-            header_template="""
-                <div style="font-size:10px; text-align:center; width:100%; padding:8px 0; border-bottom:1px solid #eee;">
-                    <strong>Wananchi Mali SACCO</strong>
-                </div>
-            """,
-            footer_template="""
-                <div style="font-size:9px; text-align:center; width:100%; padding:5px 0; border-top:1px solid #eee; color:#666;">
-                    Page <span class="pageNumber"></span> of <span class="totalPages"></span> 
-                    | Generated on {{ generated_at }}
-                </div>
-            """.replace(
-                "{{ generated_at }}", datetime.now().strftime("%d %B %Y")
-            ),
+            display_header_footer=False,
         )
         await browser.close()
         return pdf_bytes
@@ -878,6 +865,70 @@ class MemberYearlySummaryPDFView(APIView):
         # Cloudinary logo URL
         logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
 
+        # === PREPARE TABLE DATA ===
+        # 1. Extract unique types (sorted)
+        savings_types = set()
+        venture_types = set()
+        loan_types = set()
+
+        for m in data["monthly_summary"]:
+            for s in m["savings"]["by_type"]:
+                savings_types.add(s["type"])
+            for v in m["ventures"]["by_type"]:
+                venture_types.add(v["venture_type"])
+            for l in m["loans"]["by_type"]:
+                loan_types.add(l["loan_type"])
+
+        savings_types = sorted(list(savings_types))
+        venture_types = sorted(list(venture_types))
+        loan_types = sorted(list(loan_types))
+
+        # 2. Build rows
+        table_rows = []
+        for m in data["monthly_summary"]:
+            row = {"month": m["month"].split(" ")[0]}
+
+            # Savings
+            s_map = {item["type"]: item for item in m["savings"]["by_type"]}
+            row["savings"] = []
+            for t in savings_types:
+                item = s_map.get(t)
+                row["savings"].append(
+                    {
+                        "dep": item["amount"] if item else 0,
+                        "bal": item["balance_carried_forward"] if item else 0,
+                    }
+                )
+
+            # Ventures
+            v_map = {item["venture_type"]: item for item in m["ventures"]["by_type"]}
+            row["ventures"] = []
+            for t in venture_types:
+                item = v_map.get(t)
+                row["ventures"].append(
+                    {
+                        "dep": item["total_venture_deposits"] if item else 0,
+                        "pay": item["total_venture_payments"] if item else 0,
+                        "bal": item["balance_carried_forward"] if item else 0,
+                    }
+                )
+
+            # Loans
+            l_map = {item["loan_type"]: item for item in m["loans"]["by_type"]}
+            row["loans"] = []
+            for t in loan_types:
+                item = l_map.get(t)
+                row["loans"].append(
+                    {
+                        "disb": item["total_amount_disbursed"] if item else 0,
+                        "rep": item["total_amount_repaid"] if item else 0,
+                        "int": item["total_interest_charged"] if item else 0,
+                        "out": item["total_amount_outstanding"] if item else 0,
+                    }
+                )
+
+            table_rows.append(row)
+
         # Render HTML with logo
         html_string = render_to_string(
             "reports/yearly_summary_pdf.html",
@@ -887,6 +938,11 @@ class MemberYearlySummaryPDFView(APIView):
                 "year": year,
                 "logo_url": logo_url,
                 "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+                # New context
+                "savings_types": savings_types,
+                "venture_types": venture_types,
+                "loan_types": loan_types,
+                "table_rows": table_rows,
             },
         )
 
