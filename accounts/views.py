@@ -1,4 +1,6 @@
 import logging
+import csv
+import io
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -19,19 +21,23 @@ from accounts.serializers import (
     MemberCreatedByAdminSerializer,
     BulkMemberCreatedByAdminSerializer,
     PasswordChangeSerializer,
+    BulkMemberCreatedByAdminUploadCSVSerializer
 )
 from accounts.permissions import IsSystemAdmin, IsSystemAdminOrReadOnly
 from accounts.utils import (
     send_password_reset_email,
     send_member_number_email,
+    send_member_number_email,
     send_account_activated_email,
 )
+from accounts.tools import create_member_accounts
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
 from venturetypes.models import VentureType
 from ventures.models import VentureAccount
 from loans.models import LoanAccount
 from loantypes.models import LoanType
+
 
 logger = logging.getLogger(__name__)
 
@@ -163,10 +169,65 @@ class PasswordChangeView(generics.UpdateAPIView):
 
 
 """
+Activate account
+"""
+class ActivateAccountView(APIView):
+    permission_classes = [
+        AllowAny,
+    ]
+
+    def patch(self, request):
+        uidb64 = request.data.get("uidb64")
+        token = request.data.get("token")
+        password = request.data.get("password")
+
+        if not all([uidb64, token, password]):
+            return Response(
+                {"error": "Missing required fields"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+            return Response(
+                {"error": "Invalid activation link"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        token_generator = PasswordResetTokenGenerator()
+        if token_generator.check_token(user, token):
+            # Validate password using the serializer
+            serializer = BaseUserSerializer(
+                user, data={"password": password}, partial=True
+            )
+            if serializer.is_valid():
+                user.set_password(password)
+                user.is_active = True
+                user.save()
+
+                # Send member number email
+                try:
+                    send_account_activated_email(user)
+                except Exception as e:
+                    # Log the error (use your preferred logging mechanism)
+                    logger.error(f"Failed to send email to {user.email}: {str(e)}")
+                    # print(f"Failed to send email to {user.email}: {str(e)}")
+                return Response(
+                    {"message": "Account activated successfully"},
+                    status=status.HTTP_200_OK,
+                )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+"""
 System admin views
 - Approve new members
 - View list of members
 - Creating a new member
+- Bulk creating members
 - Member activating their accounts
 """
 
@@ -217,50 +278,7 @@ class MemberCreatedByAdminView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         user = serializer.save()
-
-        # Existing savings account creation
-        savings_types = SavingsType.objects.all()
-        created_accounts = []
-        for savings_type in savings_types:
-            if not SavingsAccount.objects.filter(
-                member=user, account_type=savings_type
-            ).exists():
-                account = SavingsAccount.objects.create(
-                    member=user, account_type=savings_type, is_active=True
-                )
-                created_accounts.append(str(account))
-        logger.info(
-            f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
-        )
-        # Existing venture account creation
-        venture_types = VentureType.objects.all()
-        created_accounts = []
-        for venture_type in venture_types:
-            if not VentureAccount.objects.filter(
-                member=user, venture_type=venture_type
-            ).exists():
-                account = VentureAccount.objects.create(
-                    member=user, venture_type=venture_type, is_active=True
-                )
-                created_accounts.append(str(account))
-        logger.info(
-            f"Created {len(created_accounts)} VentureAccounts for {user.member_no}: {', '.join(created_accounts)}"
-        )
-
-        # Existing loan account creation
-        loan_types = LoanType.objects.all()
-        created_accounts = []
-        for loan_type in loan_types:
-            if not LoanAccount.objects.filter(
-                member=user, loan_type=loan_type
-            ).exists():
-                account = LoanAccount.objects.create(
-                    member=user, loan_type=loan_type, is_active=True
-                )
-                created_accounts.append(str(account))
-        logger.info(
-            f"Created {len(created_accounts)} LoanAccounts for {user.member_no}: {', '.join(created_accounts)}"
-        )
+        create_member_accounts(user)
 
 
 class BulkMemberCreatedByAdminView(APIView):
@@ -273,49 +291,7 @@ class BulkMemberCreatedByAdminView(APIView):
 
             # Your existing savings account creation logic
             for user in users:
-                savings_types = SavingsType.objects.all()
-                created_accounts = []
-                for savings_type in savings_types:
-                    if not SavingsAccount.objects.filter(
-                        member=user, account_type=savings_type
-                    ).exists():
-                        account = SavingsAccount.objects.create(
-                            member=user, account_type=savings_type, is_active=True
-                        )
-                        created_accounts.append(str(account))
-                logger.info(
-                    f"Created {len(created_accounts)} SavingsAccounts for {user.member_no}: {', '.join(created_accounts)}"
-                )
-
-                # Your existing venture account creation logic
-                venture_types = VentureType.objects.all()
-                created_accounts = []
-                for venture_type in venture_types:
-                    if not VentureAccount.objects.filter(
-                        member=user, venture_type=venture_type
-                    ).exists():
-                        account = VentureAccount.objects.create(
-                            member=user, venture_type=venture_type, is_active=True
-                        )
-                        created_accounts.append(str(account))
-                logger.info(
-                    f"Created {len(created_accounts)} VentureAccounts for {user.member_no}: {', '.join(created_accounts)}"
-                )
-
-                # Your existing loan account creation logic
-                loan_types = LoanType.objects.all()
-                created_accounts = []
-                for loan_type in loan_types:
-                    if not LoanAccount.objects.filter(
-                        member=user, loan_type=loan_type
-                    ).exists():
-                        account = LoanAccount.objects.create(
-                            member=user, loan_type=loan_type, is_active=True
-                        )
-                        created_accounts.append(str(account))
-                logger.info(
-                    f"Created {len(created_accounts)} LoanAccounts for {user.member_no}: {', '.join(created_accounts)}"
-                )
+                create_member_accounts(user)
 
             # FIXED: Use MemberCreatedByAdminSerializer for response (handles User instances)
             return Response(
@@ -331,52 +307,50 @@ class BulkMemberCreatedByAdminView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class ActivateAccountView(APIView):
-    permission_classes = [
-        AllowAny,
-    ]
+class BulkMemberCreatedByAdminUploadCSVView(APIView):
+    permission_classes = (IsSystemAdmin,)
+    serializer_class = BulkMemberCreatedByAdminUploadCSVSerializer
 
-    def patch(self, request):
-        uidb64 = request.data.get("uidb64")
-        token = request.data.get("token")
-        password = request.data.get("password")
+    def post(self, request):
+        serializer = self.serializer_class(data=request.data)
+        if serializer.is_valid(raise_exception=True):
+            file = serializer.validated_data["file"]
+            decoded_file = file.read().decode("utf-8")
+            io_string = io.StringIO(decoded_file)
+            reader = csv.DictReader(io_string)
 
-        if not all([uidb64, token, password]):
-            return Response(
-                {"error": "Missing required fields"}, status=status.HTTP_400_BAD_REQUEST
-            )
+            created_users = []
+            errors = []
 
-        try:
-            uid = force_str(urlsafe_base64_decode(uidb64))
-            user = User.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, User.DoesNotExist):
-            return Response(
-                {"error": "Invalid activation link"}, status=status.HTTP_400_BAD_REQUEST
-            )
+            for row in reader:
+                # Clean data: Remove empty strings so that optional fields are handled correctly
+                data = {k: v.strip() for k, v in row.items() if v and v.strip()}
 
-        token_generator = PasswordResetTokenGenerator()
-        if token_generator.check_token(user, token):
-            # Validate password using the serializer
-            serializer = BaseUserSerializer(
-                user, data={"password": password}, partial=True
-            )
-            if serializer.is_valid():
-                user.set_password(password)
-                user.is_active = True
-                user.save()
+                # Map CSV fields to serializer fields if necessary
+                # Assuming CSV headers match serializer fields
+                member_serializer = MemberCreatedByAdminSerializer(data=data)
+                if member_serializer.is_valid():
+                    try:
+                        user = member_serializer.save()
+                        create_member_accounts(user)
+                        created_users.append(user)
+                    except Exception as e:
+                        errors.append(f"Error creating user {row.get('email', 'Unknown')}: {str(e)}")
+                else:
+                    errors.append(f"Validation error for {row.get('email', 'Unknown')}: {member_serializer.errors}")
 
-                # Send member number email
-                try:
-                    send_account_activated_email(user)
-                except Exception as e:
-                    # Log the error (use your preferred logging mechanism)
-                    logger.error(f"Failed to send email to {user.email}: {str(e)}")
-                    # print(f"Failed to send email to {user.email}: {str(e)}")
-                return Response(
-                    {"message": "Account activated successfully"},
-                    status=status.HTTP_200_OK,
-                )
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return Response(
-            {"error": "Invalid or expired token"}, status=status.HTTP_400_BAD_REQUEST
-        )
+            response_data = {
+                "message": f"Successfully created {len(created_users)} members.",
+                "created_members": MemberCreatedByAdminSerializer(
+                    created_users, many=True
+                ).data,
+            }
+
+            if errors:
+                response_data["errors"] = errors
+
+            return Response(response_data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+

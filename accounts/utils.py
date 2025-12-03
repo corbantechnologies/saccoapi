@@ -199,3 +199,6 @@ def send_account_created_by_admin_email(user, activation_link=None):
     except Exception as e:
         logger.error(f"Error sending email to {user.email}: {str(e)}")
         return None
+
+
+
