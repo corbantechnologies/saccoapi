@@ -11,6 +11,7 @@ from accounts.views import (
     ActivateAccountView,
     BulkMemberCreatedByAdminView,
     PasswordChangeView,
+    BulkMemberCreatedByAdminUploadCSVView
 )
 
 app_name = "accounts"
@@ -26,6 +27,11 @@ urlpatterns = [
         "new-members/bulk-create/",
         BulkMemberCreatedByAdminView.as_view(),
         name="bulk-create-members",
+    ),
+    path(
+        "new-members/bulk-create/upload/",
+        BulkMemberCreatedByAdminUploadCSVView.as_view(),
+        name="bulk-create-members-upload-csv",
     ),
     # Password reset
     path("password/reset/", RequestPasswordResetView.as_view(), name="password-reset"),
