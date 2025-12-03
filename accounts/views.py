@@ -313,44 +313,62 @@ class BulkMemberCreatedByAdminUploadCSVView(APIView):
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid(raise_exception=True):
-            file = serializer.validated_data["file"]
-            decoded_file = file.read().decode("utf-8")
-            io_string = io.StringIO(decoded_file)
-            reader = csv.DictReader(io_string)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            created_users = []
-            errors = []
+        file = serializer.validated_data["file"]
+        decoded_file = file.read().decode("utf-8")
+        io_string = io.StringIO(decoded_file)
+        reader = csv.DictReader(io_string)
 
-            for row in reader:
-                # Clean data: Remove empty strings so that optional fields are handled correctly
-                data = {k: v.strip() for k, v in row.items() if v and v.strip()}
+        created_users = []
+        errors = []
 
-                # Map CSV fields to serializer fields if necessary
-                # Assuming CSV headers match serializer fields
-                member_serializer = MemberCreatedByAdminSerializer(data=data)
-                if member_serializer.is_valid():
-                    try:
-                        user = member_serializer.save()
-                        create_member_accounts(user)
-                        created_users.append(user)
-                    except Exception as e:
-                        errors.append(f"Error creating user {row.get('email', 'Unknown')}: {str(e)}")
-                else:
-                    errors.append(f"Validation error for {row.get('email', 'Unknown')}: {member_serializer.errors}")
+        for row_number, row in enumerate(reader, start=2):  # Row 1 = headers
+            # Clean data: remove empty strings so optional fields are handled correctly
+            data = {k: v.strip() for k, v in row.items() if v and v.strip()}
 
-            response_data = {
-                "success": len(errors) == 0,
-                "message": f"Processed CSV: {len(created_users)} created, {len(errors)} failed.",
-                "created_count": len(created_users),
-                "failed_count": len(errors),
-            }
+            # Identify the row for better error reporting
+            identifier = row.get("email") or row.get("member_no") or f"Row {row_number}"
 
-            if errors:
-                response_data["errors"] = errors
+            member_serializer = MemberCreatedByAdminSerializer(data=data)
+            if member_serializer.is_valid():
+                try:
+                    user = member_serializer.save()
+                    create_member_accounts(user)
+                    created_users.append(user)
+                except Exception as e:
+                    errors.append(f"Row {row_number} ({identifier}): Error creating user - {str(e)}")
+            else:
+                # Make validation errors more readable
+                error_details = []
+                for field, msgs in member_serializer.errors.items():
+                    error_details.append(f"{field}: {', '.join([str(m) for m in msgs])}")
+                errors.append(f"Row {row_number} ({identifier}): Validation error - {'; '.join(error_details)}")
 
-            return Response(response_data, status=status.HTTP_201_CREATED)
+        # Prepare response data
+        total_rows = len(created_users) + len(errors)
+        response_data = {
+            "success": len(errors) == 0 and len(created_users) > 0,
+            "message": f"Processed CSV: {len(created_users)} created, {len(errors)} failed out of {total_rows}.",
+            "created_count": len(created_users),
+            "failed_count": len(errors),
+        }
 
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if errors:
+            response_data["errors"] = errors
+
+        # Determine appropriate HTTP status code
+        if created_users:
+            # At least one user was created
+            if len(errors) == 0:
+                status_code = status.HTTP_201_CREATED
+            else:
+                status_code = status.HTTP_200_OK
+        else:
+            # Nothing was created → treat as client error
+            status_code = status.HTTP_400_BAD_REQUEST
+
+        return Response(response_data, status=status_code)
 
 
