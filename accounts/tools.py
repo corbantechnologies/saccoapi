@@ -1,3 +1,5 @@
+import logging
+
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
 from venturetypes.models import VentureType
@@ -5,6 +7,8 @@ from ventures.models import VentureAccount
 from loans.models import LoanAccount
 from loantypes.models import LoanType
 
+
+logger = logging.getLogger(__name__)
 
 def create_member_accounts(user):
     """

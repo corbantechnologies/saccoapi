@@ -340,10 +340,10 @@ class BulkMemberCreatedByAdminUploadCSVView(APIView):
                     errors.append(f"Validation error for {row.get('email', 'Unknown')}: {member_serializer.errors}")
 
             response_data = {
-                "message": f"Successfully created {len(created_users)} members.",
-                "created_members": MemberCreatedByAdminSerializer(
-                    created_users, many=True
-                ).data,
+                "success": len(errors) == 0,
+                "message": f"Processed CSV: {len(created_users)} created, {len(errors)} failed.",
+                "created_count": len(created_users),
+                "failed_count": len(errors),
             }
 
             if errors:
