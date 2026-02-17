@@ -17,9 +17,9 @@ current_year = datetime.now().year
 
 def compute_loan_coverage(application: LoanApplication) -> dict:
     total_savings = Decimal(
-        SavingsAccount.objects.filter(member=application.member).aggregate(
-            t=models.Sum("balance")
-        )["t"]
+        SavingsAccount.objects.filter(
+            member=application.member, account_type__is_guaranteed=True
+        ).aggregate(t=models.Sum("balance"))["t"]
         or "0"
     )
 

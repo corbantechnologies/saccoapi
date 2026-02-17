@@ -12,9 +12,9 @@ def update_guarantor_max_amount(sender, instance, **kwargs):
     try:
         profile = instance.member.guarantor_profile
         if profile.is_eligible:
-            total = SavingsAccount.objects.filter(member=instance.member).aggregate(
-                total=models.Sum("balance")
-            )["total"] or Decimal("0")
+            total = SavingsAccount.objects.filter(
+                member=instance.member, account_type__is_guaranteed=True
+            ).aggregate(total=models.Sum("balance"))["total"] or Decimal("0")
             profile.max_guarantee_amount = total
             profile.save(update_fields=["max_guarantee_amount"])
     except GuarantorProfile.DoesNotExist:
