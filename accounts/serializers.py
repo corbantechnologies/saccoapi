@@ -94,7 +94,6 @@ class BaseUserSerializer(serializers.ModelSerializer):
         setattr(user, role_field, True)
         user.is_active = True
         user.save()
-
         return user
 
 
