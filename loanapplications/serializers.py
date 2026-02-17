@@ -283,16 +283,16 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
         return getattr(obj, "projection_snapshot", {})
 
     def get_total_savings(self, obj):
-        total = SavingsAccount.objects.filter(member=obj.member).aggregate(
-            t=models.Sum("balance")
-        )["t"] or Decimal("0")
+        total = SavingsAccount.objects.filter(
+            member=obj.member, account_type__is_guaranteed=True
+        ).aggregate(t=models.Sum("balance"))["t"] or Decimal("0")
         return float(Decimal(total))
 
     def get_available_self_guarantee(self, obj):
         total_savings = Decimal(
-            SavingsAccount.objects.filter(member=obj.member).aggregate(
-                t=models.Sum("balance")
-            )["t"]
+            SavingsAccount.objects.filter(
+                member=obj.member, account_type__is_guaranteed=True
+            ).aggregate(t=models.Sum("balance"))["t"]
             or "0"
         )
 

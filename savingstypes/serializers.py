@@ -19,6 +19,7 @@ class SavingsTypeSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "interest_rate",
+            "is_guaranteed",
             "created_at",
             "updated_at",
             "reference",
