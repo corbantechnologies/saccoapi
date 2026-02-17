@@ -35,9 +35,9 @@ class GuarantorProfile(TimeStampedModel, UniversalIdModel, ReferenceModel):
 
     def save(self, *args, **kwargs):
         if self.pk:
-            total_savings = SavingsAccount.objects.filter(member=self.member).aggregate(
-                total=models.Sum("balance")
-            )["total"] or Decimal("0")
+            total_savings = SavingsAccount.objects.filter(
+                member=self.member, account_type__is_guaranteed=True
+            ).aggregate(total=models.Sum("balance"))["total"] or Decimal("0")
             self.max_guarantee_amount = total_savings
 
         super().save(*args, **kwargs)
