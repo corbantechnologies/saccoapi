@@ -22,7 +22,7 @@ def generate_reference():
 
 def generate_member_number():
     year = datetime.now().year % 100  # Last two digits of year
-    random_number = "".join(secrets.choice(string.digits) for _ in range(6))
+    random_number = "".join(secrets.choice(string.digits) for _ in range(4))
     return f"MB{year}{random_number}"
 
 
