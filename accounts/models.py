@@ -64,7 +64,7 @@ class User(
     last_name = models.CharField(max_length=255)
     email = models.EmailField(blank=True, null=True)
     dob = models.DateField(blank=True, null=True)
-    gender = models.CharField(max_length=255)
+    gender = models.CharField(max_length=255, blank=True, null=True)
     avatar = CloudinaryField("avatars", blank=True, null=True)
 
     # Identity
@@ -77,7 +77,7 @@ class User(
     county = models.CharField(max_length=255, blank=True, null=True)
 
     # Employment Status
-    employment_type = models.CharField(max_length=255)
+    employment_type = models.CharField(max_length=255, blank=True, null=True)
     employer = models.CharField(max_length=255, blank=True, null=True)
     job_title = models.CharField(max_length=255, blank=True, null=True)
 

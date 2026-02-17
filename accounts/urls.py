@@ -20,7 +20,7 @@ urlpatterns = [
     path("token/", TokenView.as_view(), name="token"),
     path("<str:id>/", UserDetailView.as_view(), name="user-detail"),
     # System admin activities
-    path("", MemberListView.as_view(), name="members"),
+    path("members/all/", MemberListView.as_view(), name="members"),
     path("member/<str:member_no>/", MemberDetailView.as_view(), name="member-detail"),
     path("new-member/create/", MemberCreatedByAdminView.as_view(), name="new-member"),
     path(

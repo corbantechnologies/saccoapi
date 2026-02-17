@@ -18,8 +18,7 @@ from django.contrib.auth import get_user_model
 from django.http import StreamingHttpResponse
 from datetime import datetime
 from collections import defaultdict
-from django.db.models import Sum, Case, When, DecimalField, F
-from django.db.models.functions import ExtractMonth, ExtractYear
+from django.db.models import Sum
 from rest_framework.views import APIView
 
 
