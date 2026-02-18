@@ -19,7 +19,7 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
         slug_field="reference", queryset=LoanApplication.objects.all()
     )
     guaranteed_amount = serializers.DecimalField(
-        max_digits=15, decimal_places=2, min_value=Decimal("0.01")
+        max_digits=15, decimal_places=2, min_value=Decimal("0.01"), required=False, read_only=True
     )
     loan_application_detail = serializers.SerializerMethodField(read_only=True)
 
@@ -41,12 +41,14 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
     def get_loan_application_detail(self, obj):
         loan = obj.loan_application
         return {
+            "reference": loan.reference,
             "requested_amount": loan.requested_amount,
             "repayment_amount": loan.repayment_amount,
             "total_interest": loan.total_interest,
             "status": loan.status,
             "term_months": loan.projection_snapshot["term_months"],
             "monthly_payment": loan.monthly_payment,
+            "projection_snapshot": loan.projection_snapshot,
         }
 
     def validate(self, data):
@@ -54,7 +56,6 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
         member = request.user
         loan_app = data["loan_application"]
         guarantor = data["guarantor"]
-        amount = data["guaranteed_amount"]
 
         # 1. Ownership
         if loan_app.member != member:
@@ -71,18 +72,7 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
                 {"loan_application": f"Application is in '{loan_app.status}' state."}
             )
 
-        # 3. Guarantor capacity
-        current_committed = guarantor.committed_guarantee_amount
-        if self.instance:
-            current_committed -= self.instance.guaranteed_amount
-
-        if current_committed + amount > guarantor.max_guarantee_amount:
-            available = guarantor.max_guarantee_amount - current_committed
-            raise serializers.ValidationError(
-                {"guaranteed_amount": f"Guarantor has only {available} available."}
-            )
-
-        # 4. No duplicate
+        # 3. No duplicate
         dup_qs = GuaranteeRequest.objects.filter(
             loan_application=loan_app, guarantor=guarantor
         )
@@ -93,37 +83,14 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
                 {"guarantor": "This member is already a guarantor."}
             )
 
-        # 5. Self-guarantee limit
-        if guarantor.member == member:
-            coverage = compute_loan_coverage(loan_app)
-            if amount > coverage["available_self_guarantee"]:
-                raise serializers.ValidationError(
-                    {
-                        "guaranteed_amount": f"Self-guarantee limited to {coverage['available_self_guarantee']}"
-                    }
-                )
-
         return data
 
     def create(self, validated_data):
         validated_data["member"] = self.context["request"].user
         instance = super().create(validated_data)
-
-        # AUTO-ACCEPT SELF-GUARANTEE ONLY
-        if instance.guarantor.member == instance.member:
-            instance.status = "Accepted"
-            instance.save(update_fields=["status"])
-
-            loan = instance.loan_application
-            loan.self_guaranteed_amount = instance.guaranteed_amount
-            loan.save(update_fields=["self_guaranteed_amount"])
-
-            if compute_loan_coverage(loan)["is_fully_covered"]:
-                loan.status = "Ready for Submission"
-                loan.save(update_fields=["status"])
         
         if instance.guarantor.member.email:
-            send_guarantor_guarantee_request_status_email(instance)
+             send_guarantor_guarantee_request_status_email(instance)
 
         return instance
 
@@ -142,27 +109,45 @@ class GuaranteeApprovalDeclineSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data.get("status") == "Accepted":
             amount = data.get("guaranteed_amount")
-            if amount:
-                # 1. Positive amount
-                if amount <= Decimal("0"):
-                    raise serializers.ValidationError(
-                        {"guaranteed_amount": "Amount must be positive."}
-                    )
+            
+            # 1. Amount required on acceptance
+            if not amount:
+                 raise serializers.ValidationError(
+                    {"guaranteed_amount": "Amount is required when accepting."}
+                )
 
-                # 2. Check capacity
-                # Note: We are checking against the *current* committed amount.
-                # Since commitment is deferred to submission, this check ensures
-                # the guarantor at least has "room" on paper right now.
-                instance = self.instance
-                guarantor = instance.guarantor
-                available = guarantor.available_capacity()
+            # 2. Positive amount
+            if amount <= Decimal("0"):
+                raise serializers.ValidationError(
+                    {"guaranteed_amount": "Amount must be positive."}
+                )
 
-                if amount > available:
+            instance = self.instance
+            guarantor = instance.guarantor
+
+            # 3. Check capacity
+            # Note: We are checking against the *current* committed amount.
+            # Since commitment is deferred to submission, this check ensures
+            # the guarantor at least has "room" on paper right now.
+            available = guarantor.available_capacity()
+
+            if amount > available:
+                raise serializers.ValidationError(
+                    {
+                        "guaranteed_amount": f"You only have {available} available guarantee limit."
+                    }
+                )
+            
+            # 4. Self-guarantee limit
+            if guarantor.member == instance.loan_application.member:
+                coverage = compute_loan_coverage(instance.loan_application)
+                if amount > coverage["available_self_guarantee"]:
                     raise serializers.ValidationError(
                         {
-                            "guaranteed_amount": f"You only have {available} available guarantee limit."
+                            "guaranteed_amount": f"Self-guarantee limited to {coverage['available_self_guarantee']}"
                         }
                     )
+                    
         return data
 
 

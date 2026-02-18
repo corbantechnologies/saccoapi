@@ -65,6 +65,7 @@ class LoanApplicationSerializer(serializers.ModelSerializer):
             "updated_at",
             "reference",
             "loan_account",
+            "amendment_notes",
             "guarantors",
             "projection",
         )

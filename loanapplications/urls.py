@@ -10,6 +10,7 @@ from loanapplications.views import (
     AdminAmendView,
     MemberAcceptAmendmentView,
     MemberCancelAmendmentView,
+    DisburseLoanApplicationView
 )
 
 app_name = "loanapplications"
@@ -51,5 +52,10 @@ urlpatterns = [
         "<str:reference>/cancel-amendment/",
         MemberCancelAmendmentView.as_view(),
         name="cancel-amendment",
+    ),
+    path(
+        "<str:reference>/disburse/",
+        DisburseLoanApplicationView.as_view(),
+        name="disburse-loanapplication",
     ),
 ]

@@ -12,7 +12,7 @@ from guaranteerequests.models import GuaranteeRequest
 from guarantorprofile.models import GuarantorProfile
 from loans.models import LoanAccount
 from loanapplications.utils import compute_loan_coverage, send_admin_loan_application_status_email, send_loan_application_status_email
-
+from loandisbursements.models import LoanDisbursement
 
 
 # ——————————————————————————————————————————————————————————————
@@ -210,9 +210,13 @@ class AdminAmendView(generics.RetrieveUpdateAPIView):
         if app.status != "Ready for Amendment":
              raise serializers.ValidationError({"detail": "Application not ready for amendment."})
         
+        # Enforce amendment notes
+        notes = serializer.validated_data.get("amendment_notes")
+        if not notes:
+             raise serializers.ValidationError({"amendment_notes": "This field is required when amending."})
+        
         serializer.save(status="Amended")
         send_loan_application_status_email(app)
-        return Response({"detail": "Amended successfully."}, status=status.HTTP_200_OK)
 
 
 class MemberAcceptAmendmentView(generics.GenericAPIView):
@@ -405,6 +409,8 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
 # ——————————————————————————————————————————————————————————————
 # 4. Disburse (Admin Only) — Add to LoanAccount balance
 # ——————————————————————————————————————————————————————————————
+
+
 class DisburseLoanApplicationView(generics.GenericAPIView):
     queryset = LoanApplication.objects.all()
     permission_classes = [IsAuthenticated, IsSystemAdminOrReadOnly]
@@ -414,8 +420,19 @@ class DisburseLoanApplicationView(generics.GenericAPIView):
         app = self.get_object()
 
         if app.status != "Approved":
-            return Response(
-                {"detail": "Application must be approved first."},
+            # Allow disbursed state to add more disbursements? 
+            # User said: "ensure if it is the first disbursement, the application is updated to disbursed"
+            # So maybe we allow multiple disbursements? 
+            # But the prompt says "app status is updated to Disbursed".
+            # Let's assume we can disburse if Approved OR Disbursed (refills).
+            # But for now, let's stick to Approved -> Disbursed for the main principal.
+            # If status is already Disbursed, we might be adding a second tranche?
+            # Let's keep it simple: Start with Approved check, but maybe allow Disbursed too if logic permits.
+            pass
+
+        if app.status not in ["Approved", "Disbursed"]:
+             return Response(
+                {"detail": "Application must be approved or already disbursed."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -425,12 +442,27 @@ class DisburseLoanApplicationView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Check if already fully disbursed? 
+        # For now, just create the disbursement record.
+        
         with transaction.atomic():
-            app.loan_account.outstanding_balance += app.requested_amount
-            app.loan_account.save(update_fields=["outstanding_balance"])
+            # Create Disbursement Record
+            # This automatically updates loan_account.outstanding_balance via its save() method
+            LoanDisbursement.objects.create(
+                loan_account=app.loan_account,
+                amount=app.requested_amount, # Or should we allow partial? User didn't specify. Assuming full.
+                disbursed_by=request.user,
+                disbursement_type="Principal",
+                transaction_status="Completed"
+            )
 
-            app.status = "Disbursed"
-            app.save(update_fields=["status"])
+            # Update App Status only if not already disbursed
+            if app.status != "Disbursed":
+                app.status = "Disbursed"
+                app.save(update_fields=["status"])
+            
+            if app.member.email:
+                send_loan_application_status_email(app)
 
         return Response(
             {

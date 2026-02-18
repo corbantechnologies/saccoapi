@@ -51,6 +51,7 @@ class LoanApplication(UniversalIdModel, TimeStampedModel, ReferenceModel):
     total_interest = models.DecimalField(
         max_digits=15, decimal_places=2, null=True, blank=True
     )
+    amendment_notes = models.TextField(null=True, blank=True)
     # REDUCING BALANCE FIELDS
     calculation_mode = models.CharField(max_length=20, choices=CALCULATION_MODE_CHOICES)
     term_months = models.PositiveIntegerField(null=True, blank=True)
