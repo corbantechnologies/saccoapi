@@ -74,7 +74,7 @@ def reducing_fixed_payment(
     balance = principal
     total_interest = Decimal("0")
     schedule: List[dict] = []
-    cur = start_date
+    cur = start_date + DELTA[repayment_frequency]
     months = 0
 
     while balance > Decimal("0.01") and months < max_months:
@@ -130,7 +130,7 @@ def _build_schedule(
     balance = principal
     total_interest = Decimal("0")
     schedule: List[dict] = []
-    cur = start_date
+    cur = start_date + DELTA[freq]
 
     for _ in range(term_months):
         interest = (balance * monthly_rate).quantize(Decimal("0.01"), ROUND_HALF_UP)

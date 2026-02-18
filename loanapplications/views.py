@@ -210,9 +210,13 @@ class AdminAmendView(generics.RetrieveUpdateAPIView):
         if app.status != "Ready for Amendment":
              raise serializers.ValidationError({"detail": "Application not ready for amendment."})
         
+        # Enforce amendment notes
+        notes = serializer.validated_data.get("amendment_notes")
+        if not notes:
+             raise serializers.ValidationError({"amendment_notes": "This field is required when amending."})
+        
         serializer.save(status="Amended")
         send_loan_application_status_email(app)
-        return Response({"detail": "Amended successfully."}, status=status.HTTP_200_OK)
 
 
 class MemberAcceptAmendmentView(generics.GenericAPIView):
