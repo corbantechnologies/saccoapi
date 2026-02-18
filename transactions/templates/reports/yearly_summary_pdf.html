@@ -159,6 +159,7 @@
                     <th colspan="{{ loan_types|length|add:loan_types|length|add:loan_types|length|add:loan_types|length }}"
                         class="th-section">Loans</th>
                     {% endif %}
+                    <th rowspan="2" class="th-section">Guarantees</th>
                 </tr>
 
                 <!-- Level 2: Types -->
@@ -191,6 +192,7 @@
                     <th class="th-col">Int</th>
                     <th class="th-col">Out</th>
                     {% endfor %}
+                    <th class="th-col">Amt</th>
                 </tr>
             </thead>
             <tbody>
@@ -218,6 +220,9 @@
                     <td>{{ l.int|floatformat:2 }}</td>
                     <td>{{ l.out|floatformat:2 }}</td>
                     {% endfor %}
+                    
+                    <!-- Guarantees -->
+                    <td>{{ row.guarantees|floatformat:2 }}</td>
                 </tr>
                 {% empty %}
                 <tr>

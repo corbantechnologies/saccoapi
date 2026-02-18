@@ -27,6 +27,10 @@ class GuaranteeRequest(TimeStampedModel, UniversalIdModel, ReferenceModel):
         GuarantorProfile, on_delete=models.CASCADE, related_name="guarantees"
     )
     guaranteed_amount = models.DecimalField(max_digits=15, decimal_places=2, null=True, blank=True)
+    current_balance = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        help_text="Remaining guaranteed amount after repayments"
+    )
     status = models.CharField(max_length=25, choices=STATUS_CHOICES, default="Pending")
     notes = models.TextField(blank=True, null=True)
 
