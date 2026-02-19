@@ -927,49 +927,49 @@ class MemberYearlySummaryPDFView(APIView):
         # 2. Build rows
         table_rows = []
         for m in data["monthly_summary"]:
-            row = {"month": m["month"].split(" ")[0]}
+            row = {
+                "month": m["month"],
+                "savings": [],
+                "ventures": [],
+                "loans": [],
+                "guarantees": m.get("guarantees", {}).get("new_guarantees", 0)
+            }
 
             # Savings
             s_map = {item["type"]: item for item in m["savings"]["by_type"]}
-            row["savings"] = []
             for t in savings_types:
                 item = s_map.get(t)
-                row["savings"].append(
-                    {
-                        "dep": item["amount"] if item else 0,
-                        "bal": item["balance_carried_forward"] if item else 0,
-                    }
-                )
+                row["savings"].append({
+                    "type": t,
+                    "dep": item["amount"] if item else 0,
+                    "bal": item["balance_carried_forward"] if item else 0,
+                    "exists": bool(item)
+                })
 
             # Ventures
             v_map = {item["venture_type"]: item for item in m["ventures"]["by_type"]}
-            row["ventures"] = []
             for t in venture_types:
                 item = v_map.get(t)
-                row["ventures"].append(
-                    {
-                        "dep": item["total_venture_deposits"] if item else 0,
-                        "pay": item["total_venture_payments"] if item else 0,
-                        "bal": item["balance_carried_forward"] if item else 0,
-                    }
-                )
+                row["ventures"].append({
+                    "type": t,
+                    "dep": item["total_venture_deposits"] if item else 0,
+                    "pay": item["total_venture_payments"] if item else 0,
+                    "bal": item["balance_carried_forward"] if item else 0,
+                    "exists": bool(item)
+                })
 
             # Loans
             l_map = {item["loan_type"]: item for item in m["loans"]["by_type"]}
-            row["loans"] = []
             for t in loan_types:
                 item = l_map.get(t)
-                row["loans"].append(
-                    {
-                        "disb": item["total_amount_disbursed"] if item else 0,
-                        "rep": item["total_amount_repaid"] if item else 0,
-                        "int": item["total_interest_charged"] if item else 0,
-                        "out": item["total_amount_outstanding"] if item else 0,
-                    }
-                )
-
-            # Guarantees
-            row["guarantees"] = m.get("guarantees", {}).get("new_guarantees", 0)
+                row["loans"].append({
+                    "type": t,
+                    "disb": item["total_amount_disbursed"] if item else 0,
+                    "rep": item["total_amount_repaid"] if item else 0,
+                    "int": item["total_interest_charged"] if item else 0,
+                    "out": item["total_amount_outstanding"] if item else 0,
+                    "exists": bool(item)
+                })
 
             table_rows.append(row)
 
@@ -982,12 +982,12 @@ class MemberYearlySummaryPDFView(APIView):
                 "year": year,
                 "logo_url": logo_url,
                 "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
-                # New context
                 "savings_types": savings_types,
                 "venture_types": venture_types,
                 "loan_types": loan_types,
                 "table_rows": table_rows,
                 "total_active_guarantees": total_active_guarantees,
+                "chart_of_accounts": data["chart_of_accounts"]
             },
         )
 
