@@ -13,7 +13,7 @@ from loanapplications.calculators import reducing_fixed_payment, reducing_fixed_
 from guaranteerequests.models import GuaranteeRequest
 from guarantorprofile.models import GuarantorProfile
 from loanapplications.utils import compute_loan_coverage
-from loans.serializers import MinimalLoanAccountSerializer
+from loans.minimal_serializers import MinimalLoanAccountSerializer
 from guaranteerequests.serializers import LoanApplicationGuaranteeRequestSerializer
 from loanapplications.utils import send_admin_loan_application_status_email, send_loan_application_status_email
 

@@ -40,15 +40,16 @@ class GuaranteeRequestSerializer(serializers.ModelSerializer):
 
     def get_loan_application_detail(self, obj):
         loan = obj.loan_application
+        snapshot = loan.projection_snapshot if loan.projection_snapshot else {}
         return {
             "reference": loan.reference,
             "requested_amount": loan.requested_amount,
             "repayment_amount": loan.repayment_amount,
             "total_interest": loan.total_interest,
             "status": loan.status,
-            "term_months": loan.projection_snapshot["term_months"],
+            "term_months": snapshot.get("term_months"),
             "monthly_payment": loan.monthly_payment,
-            "projection_snapshot": loan.projection_snapshot,
+            "projection_snapshot": snapshot,
         }
 
     def validate(self, data):

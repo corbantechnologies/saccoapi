@@ -4,8 +4,8 @@ from django.contrib.auth import get_user_model
 from loans.models import LoanAccount
 from loantypes.models import LoanType
 from loanrepayments.serializers import LoanRepaymentSerializer
-from loanintereststamarind.serializers import TamarindLoanInterestSerializer
 from loandisbursements.serializers import LoanDisbursementSerializer
+from loanapplications.serializers import LoanApplicationSerializer
 
 User = get_user_model()
 
@@ -19,7 +19,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
     is_active = serializers.BooleanField(default=True)
     repayments = LoanRepaymentSerializer(many=True, read_only=True)
     loan_disbursements = LoanDisbursementSerializer(many=True, read_only=True)
-    loan_interests = TamarindLoanInterestSerializer(many=True, read_only=True)
+    applications = LoanApplicationSerializer(many=True, read_only=True)
 
     class Meta:
         model = LoanAccount
@@ -38,7 +38,7 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             "updated_at",
             "loan_disbursements",
             "repayments",
-            "loan_interests",
+            "applications",
         ]
 
     def create(self, validated_data):
@@ -51,16 +51,3 @@ class LoanAccountSerializer(serializers.ModelSerializer):
             )
         validated_data["member"] = user
         return super().create(validated_data)
-
-
-class MinimalLoanAccountSerializer(serializers.ModelSerializer):
-
-    member = serializers.CharField(source="member.member_no", read_only=True)
-
-    class Meta:
-        model = LoanAccount
-        fields = (
-            "account_number",
-            "outstanding_balance",
-            "member",
-        )

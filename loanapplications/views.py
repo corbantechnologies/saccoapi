@@ -320,7 +320,7 @@ class ApproveOrDeclineLoanApplicationView(generics.RetrieveUpdateAPIView):
             # LINK ON APPROVAL
             try:
                 loan_account = LoanAccount.objects.get(
-                    member=app.member, loan_type=app.product, is_active=True
+                    member=app.member, loan_type=app.product, is_active=True, interest_accrued=app.total_interest
                 )
             except LoanAccount.DoesNotExist:
                 raise serializers.ValidationError(
@@ -456,6 +456,18 @@ class DisburseLoanApplicationView(generics.GenericAPIView):
                 transaction_status="Completed"
             )
 
+            # Update Loan Account Interest
+            # Disbursement adds Principal. We must manually add the Interest component.
+            loan_account = app.loan_account
+            interest = app.total_interest if app.total_interest else Decimal("0.00")
+            
+            loan_account.outstanding_balance = F("outstanding_balance") + interest
+            loan_account.interest_accrued = F("interest_accrued") + interest
+            loan_account.save(update_fields=["outstanding_balance", "interest_accrued"])
+            
+            # Refresh to get actual values for response
+            loan_account.refresh_from_db()
+
             # Update App Status only if not already disbursed
             if app.status != "Disbursed":
                 app.status = "Disbursed"
@@ -468,8 +480,8 @@ class DisburseLoanApplicationView(generics.GenericAPIView):
             {
                 "detail": "Loan disbursed successfully.",
                 "disbursed_amount": float(app.requested_amount),
-                "new_balance": float(app.loan_account.outstanding_balance),
-                "account_number": app.loan_account.account_number,
+                "new_balance": float(loan_account.outstanding_balance),
+                "account_number": loan_account.account_number,
             },
             status=status.HTTP_200_OK,
         )

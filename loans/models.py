@@ -12,6 +12,12 @@ User = get_user_model()
 
 
 class LoanAccount(TimeStampedModel, UniversalIdModel, ReferenceModel):
+    """
+    Concerns:
+    Do we need an amount field for the loan model?
+    We definitely need logs to track loan
+    Outstanding balance should therefore be the principal plus the interest
+    """
     member = models.ForeignKey(User, on_delete=models.CASCADE, related_name="loans")
     loan_type = models.ForeignKey(
         LoanType, on_delete=models.PROTECT, related_name="loan_accounts"

@@ -41,6 +41,8 @@ from loanrepayments.models import LoanRepayment
 from loanintereststamarind.models import TamarindLoanInterest
 from loandisbursements.models import LoanDisbursement
 from savings.models import SavingsAccount
+from guaranteerequests.models import GuaranteeRequest
+from guarantorprofile.models import GuarantorProfile
 
 
 logger = logging.getLogger(__name__)
@@ -536,7 +538,15 @@ class MemberYearlySummaryView(APIView):
             "loan_disb": defaultdict(Decimal),
             "loan_rep": defaultdict(Decimal),
             "loan_int": defaultdict(Decimal),
+            "guarantees": defaultdict(Decimal),
         }
+
+        # === FETCH GUARANTOR PROFILE ===
+        try:
+            guarantor_profile = GuarantorProfile.objects.get(member=member)
+            total_active_guarantees = guarantor_profile.committed_guarantee_amount
+        except GuarantorProfile.DoesNotExist:
+            total_active_guarantees = Decimal("0")
 
         monthly_summary = []
 
@@ -626,6 +636,26 @@ class MemberYearlySummaryView(APIView):
                 amount = Decimal(str(i.amount))
                 loan_by_type[ltype]["interest"].append({"loan_type": ltype, "amount": float(amount)})
                 yearly["loan_int"][ltype] += amount
+
+            # === GUARANTEES (NEW) ===
+            new_guarantees = GuaranteeRequest.objects.filter(
+                guarantor__member=member,
+                status="Accepted",
+                created_at__year=year,
+                created_at__month=month,
+            ).select_related("member") # The person being guaranteed
+
+            guarantee_data = {"total_new": Decimal("0"), "transactions": []}
+            for gr in new_guarantees:
+                amount = gr.guaranteed_amount
+                guarantee_data["total_new"] += amount
+                yearly["guarantees"]["new"] += amount
+                guarantee_data["transactions"].append({
+                    "borrower_name": f"{gr.member.first_name} {gr.member.last_name}",
+                    "borrower_no": gr.member.member_no,
+                    "amount": float(amount),
+                    "date": gr.created_at.strftime("%Y-%m-%d"),
+                })
 
             # === UPDATE RUNNING BALANCES ===
             for name, data in savings_by_type.items():
@@ -727,6 +757,10 @@ class MemberYearlySummaryView(APIView):
                     "total_balance": float(sum(running["loan_out"].values())),
                     "by_type": enhanced_loans,
                 },
+                "guarantees": {
+                    "new_guarantees": float(guarantee_data["total_new"]),
+                    "transactions": guarantee_data["transactions"],
+                },
             })
 
         # === YEARLY TOTALS ===
@@ -738,6 +772,7 @@ class MemberYearlySummaryView(APIView):
         total_loan_rep = sum(yearly["loan_rep"].values())
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
+        total_new_guarantees = yearly["guarantees"]["new"]
 
         # === EXTRACT DECEMBER'S CARRIED FORWARD ===
         december_entry = next((m for m in monthly_summary if "December" in m["month"]), None)
@@ -802,6 +837,8 @@ class MemberYearlySummaryView(APIView):
                     "total_loans_repaid": float(total_loan_rep),
                     "total_interest_charged": float(total_loan_int),
                     "total_loans_outstanding": float(total_loan_out),
+                    "total_guaranteed_active": float(total_active_guarantees),
+                    "total_new_guarantees": float(total_new_guarantees),
                     "year_end_balances": year_end_balances,
                 },
                 "monthly_summary": monthly_summary,
@@ -882,6 +919,9 @@ class MemberYearlySummaryPDFView(APIView):
         venture_types = sorted(list(venture_types))
         loan_types = sorted(list(loan_types))
 
+        # Total Active Guarantees
+        total_active_guarantees = data["summary"].get("total_guaranteed_active", 0)
+
         # 2. Build rows
         table_rows = []
         for m in data["monthly_summary"]:
@@ -926,6 +966,9 @@ class MemberYearlySummaryPDFView(APIView):
                     }
                 )
 
+            # Guarantees
+            row["guarantees"] = m.get("guarantees", {}).get("new_guarantees", 0)
+
             table_rows.append(row)
 
         # Render HTML with logo
@@ -942,6 +985,7 @@ class MemberYearlySummaryPDFView(APIView):
                 "venture_types": venture_types,
                 "loan_types": loan_types,
                 "table_rows": table_rows,
+                "total_active_guarantees": total_active_guarantees,
             },
         )
 
