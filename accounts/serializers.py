@@ -106,6 +106,23 @@ class MemberSerializer(BaseUserSerializer):
         return user
 
 
+class MinimalMemberSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "member_no",
+            "first_name",
+            "middle_name",
+            "last_name",
+            "email",
+            "phone",
+            "is_active",
+            "is_approved",
+            "avatar",
+        )
+
+
 class SystemAdminSerializer(BaseUserSerializer):
     def create(self, validated_data):
         user = self.create_user(validated_data, "is_system_admin")

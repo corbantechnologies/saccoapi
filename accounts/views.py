@@ -18,6 +18,7 @@ from accounts.serializers import (
     RequestPasswordResetSerializer,
     PasswordResetSerializer,
     UserLoginSerializer,
+    MinimalMemberSerializer,
     MemberCreatedByAdminSerializer,
     BulkMemberCreatedByAdminSerializer,
     PasswordChangeSerializer,
@@ -238,7 +239,7 @@ class MemberListView(generics.ListAPIView):
     """
 
     permission_classes = (IsSystemAdminOrReadOnly,)
-    serializer_class = BaseUserSerializer
+    serializer_class = MinimalMemberSerializer
     queryset = User.objects.all()
 
     def get_queryset(self):
@@ -246,9 +247,7 @@ class MemberListView(generics.ListAPIView):
         Fetch is_member and is_system_admin field
         Users with is_system_admin are also members
         """
-        return super().get_queryset().prefetch_related(
-            "savings_accounts", "loans", "venture_accounts", "next_of_kin"
-        ).filter(is_member=True) | super().get_queryset().filter(is_system_admin=True)
+        return self.queryset.filter(is_member=True) | self.queryset.filter(is_system_admin=True)
 
 
 class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):

@@ -19,7 +19,7 @@ class LoanAccountListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         return self.queryset.filter(member=self.request.user).prefetch_related(
-            "repayments", "loan_disbursements", "loan_interests"
+            "repayments",  "loan_interests", "applications"
         )
 
 
@@ -33,5 +33,5 @@ class LoanAccountDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return self.queryset.filter(member=self.request.user).prefetch_related(
-            "repayments", "loan_disbursements", "loan_interests"
+            "repayments", "loan_interests", "applications"
         )
