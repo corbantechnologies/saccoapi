@@ -34,8 +34,8 @@ urlpatterns = [
         name="bulk-create-members-upload-csv",
     ),
     # Password reset
-    path("password/reset/", RequestPasswordResetView.as_view(), name="password-reset"),
-    path("password/new/", PasswordResetView.as_view(), name="password-reset"),
+    path("password/forgot/", RequestPasswordResetView.as_view(), name="password-forgot"),
+    path("password/reset/", PasswordResetView.as_view(), name="password-reset"),
     path("password/change/", PasswordChangeView.as_view(), name="password-change"),
     # Account activation
     path(
