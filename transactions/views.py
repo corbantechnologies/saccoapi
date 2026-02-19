@@ -648,12 +648,14 @@ class MemberYearlySummaryView(APIView):
             guarantee_data = {"total_new": Decimal("0"), "transactions": []}
             for gr in new_guarantees:
                 amount = gr.guaranteed_amount
+                current = gr.current_balance if gr.current_balance is not None else amount
                 guarantee_data["total_new"] += amount
                 yearly["guarantees"]["new"] += amount
                 guarantee_data["transactions"].append({
                     "borrower_name": f"{gr.member.first_name} {gr.member.last_name}",
                     "borrower_no": gr.member.member_no,
                     "amount": float(amount),
+                    "current_balance": float(current),
                     "date": gr.created_at.strftime("%Y-%m-%d"),
                 })
 
