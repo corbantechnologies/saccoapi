@@ -22,7 +22,10 @@ from accounts.serializers import (
     MemberCreatedByAdminSerializer,
     BulkMemberCreatedByAdminSerializer,
     PasswordChangeSerializer,
-    BulkMemberCreatedByAdminUploadCSVSerializer
+    BulkMemberCreatedByAdminSerializer,
+    PasswordChangeSerializer,
+    BulkMemberCreatedByAdminUploadCSVSerializer,
+    AdminResetPasswordSerializer
 )
 from accounts.permissions import IsSystemAdmin, IsSystemAdminOrReadOnly
 from accounts.utils import (
@@ -267,6 +270,23 @@ class MemberDetailView(generics.RetrieveUpdateDestroyAPIView):
             .prefetch_related(
                 "savings_accounts", "loans", "venture_accounts", "next_of_kin"
             )
+        )
+
+
+class AdminResetPasswordView(generics.UpdateAPIView):
+    """
+    Allow admins to reset the password for a member.
+    """
+    permission_classes = (IsSystemAdmin,)
+    serializer_class = AdminResetPasswordSerializer
+    queryset = User.objects.all()
+    lookup_field = "member_no"
+    
+    def update(self, request, *args, **kwargs):
+        super().update(request, *args, **kwargs)
+        return Response(
+            {"message": "Password reset successfully."},
+            status=status.HTTP_200_OK
         )
 
 
