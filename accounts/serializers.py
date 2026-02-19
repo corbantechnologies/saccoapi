@@ -96,6 +96,15 @@ class BaseUserSerializer(serializers.ModelSerializer):
         user.save()
         return user
 
+    def update(self, instance, validated_data):
+        # Remove password from validated_data to prevent plain text saving
+        # Password changes should go through specific endpoints or handle hashing
+        if 'password' in validated_data:
+            password = validated_data.pop('password')
+            instance.set_password(password)
+        
+        return super().update(instance, validated_data)
+
 
 class MemberSerializer(BaseUserSerializer):
     def create(self, validated_data):
@@ -204,6 +213,25 @@ class PasswordResetSerializer(serializers.Serializer):
         verification.save()
 
         return user
+
+
+class AdminResetPasswordSerializer(serializers.Serializer):
+    password = serializers.CharField(
+        max_length=128,
+        min_length=5,
+        write_only=True,
+        validators=[
+            validate_password_digit,
+            validate_password_uppercase,
+            validate_password_symbol,
+            validate_password_lowercase,
+        ],
+    )
+
+    def update(self, instance, validated_data):
+        instance.set_password(validated_data["password"])
+        instance.save()
+        return instance
 
 
 class PasswordChangeSerializer(serializers.Serializer):

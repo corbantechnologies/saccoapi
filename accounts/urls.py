@@ -11,7 +11,8 @@ from accounts.views import (
     ActivateAccountView,
     BulkMemberCreatedByAdminView,
     PasswordChangeView,
-    BulkMemberCreatedByAdminUploadCSVView
+    BulkMemberCreatedByAdminUploadCSVView,
+    AdminResetPasswordView
 )
 
 app_name = "accounts"
@@ -22,6 +23,11 @@ urlpatterns = [
     # System admin activities
     path("members/all/", MemberListView.as_view(), name="members"),
     path("member/<str:member_no>/", MemberDetailView.as_view(), name="member-detail"),
+    path(
+        "member/<str:member_no>/reset-password/", 
+        AdminResetPasswordView.as_view(), 
+        name="admin-reset-password"
+    ),
     path("new-member/create/", MemberCreatedByAdminView.as_view(), name="new-member"),
     path(
         "new-members/bulk-create/",
@@ -34,8 +40,8 @@ urlpatterns = [
         name="bulk-create-members-upload-csv",
     ),
     # Password reset
-    path("password/reset/", RequestPasswordResetView.as_view(), name="password-reset"),
-    path("password/new/", PasswordResetView.as_view(), name="password-reset"),
+    path("password/forgot/", RequestPasswordResetView.as_view(), name="password-forgot"),
+    path("password/reset/", PasswordResetView.as_view(), name="password-reset"),
     path("password/change/", PasswordChangeView.as_view(), name="password-change"),
     # Account activation
     path(
