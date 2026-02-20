@@ -5,6 +5,7 @@ import cloudinary.uploader
 import logging
 import calendar
 from playwright.async_api import async_playwright
+# from weasyprint import HTML, CSS  <-- Removed
 from datetime import date
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -20,6 +21,79 @@ from datetime import datetime
 from collections import defaultdict
 from django.db.models import Sum
 from rest_framework.views import APIView
+
+
+# ... (imports remain the same)
+
+# =====================================================================
+# PDF GENERATION
+# =====================================================================
+
+
+# ------------------------------------------------------------------
+# Sync PDF Generator (WeasyPrint)
+# ------------------------------------------------------------------
+def generate_pdf(html_content: str, base_url: str = None):
+    """Generate PDF using WeasyPrint"""
+    return HTML(string=html_content, base_url=base_url).write_pdf()
+
+
+class MemberYearlySummaryPDFView(APIView):
+    """
+    Download member yearly financial summary as PDF.
+    Uses Cloudinary logo: https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png
+    """
+
+    def get(self, request, member_no):
+        year = int(request.query_params.get("year", datetime.now().year))
+
+        try:
+            member = User.objects.get(member_no=member_no, is_member=True)
+        except User.DoesNotExist:
+            return Response({"error": "Member not found"}, status=404)
+
+        # Reuse JSON view data
+        from .views import MemberYearlySummaryView
+
+        json_view = MemberYearlySummaryView()
+        json_view.request = request
+        data = json_view.get(request, member_no).data
+        
+        # ... (Data processing logic remains the same, I will use replace_file_content carefully to preserve it)
+
+        # Render HTML with logo
+        html_string = render_to_string(
+            "reports/yearly_summary_pdf.html",
+            {
+                "data": data,
+                "member": member,
+                "year": year,
+                "logo_url": "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png", # Hardcoded or passed from view
+                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+                "savings_types": savings_types,
+                "venture_types": venture_types,
+                "loan_types": loan_types,
+                "table_rows": table_rows,
+                "total_active_guarantees": total_active_guarantees,
+                "chart_of_accounts": data["chart_of_accounts"]
+            },
+        )
+
+        # Generate PDF
+        try:
+             # WeasyPrint needs a base_url to resolve relative paths (like static files) if any. 
+             # For external images (Cloudinary), it should fetch them as long as internet is available.
+            pdf_bytes = generate_pdf(html_string, base_url=request.build_absolute_uri())
+        except Exception as e:
+            logger.error(f"PDF generation failed for {member_no}: {e}")
+            return Response({"error": "Failed to generate PDF"}, status=500)
+
+        # Return download
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
+        )
+        return response
 
 
 from savings.models import SavingsType
@@ -548,21 +622,112 @@ class MemberYearlySummaryView(APIView):
         except GuarantorProfile.DoesNotExist:
             total_active_guarantees = Decimal("0")
 
+        # === OPTIMIZED FETCHING: ALL YEAR DATA AT ONCE ===
+        from django.db.models.functions import TruncMonth
+
+        # Helper to group by month
+        def get_monthly_data(queryset, date_field="created_at"):
+            return (
+                queryset
+                .annotate(month=TruncMonth(date_field))
+                .order_by("month")
+            )
+
+        # 1. Savings
+        savings_qs = get_monthly_data(
+            SavingsDeposit.objects.filter(
+                savings_account__member=member,
+                created_at__year=year
+            ).select_related("savings_account__account_type")
+        )
+        # Group in Python to avoid overly complex potential grouping key issues if we need transaction lists
+        # But for summation we could use values().annotate(). 
+        # However, we NEED the transaction list details for the 'view details' part of the summary.
+        # So we fetch all transactions for the year (one query per model) and group in Python.
+        # This is strictly better than 12 queries per model.
+
+        savings_by_month = defaultdict(list)
+        for dep in savings_qs:
+            savings_by_month[dep.month.month].append(dep)
+
+        # 2. Ventures
+        vent_dep_qs = get_monthly_data(
+            VentureDeposit.objects.filter(
+                venture_account__member=member,
+                created_at__year=year
+            ).select_related("venture_account__venture_type")
+        )
+        vent_pay_qs = get_monthly_data(
+            VenturePayment.objects.filter(
+                venture_account__member=member,
+                created_at__year=year
+            ).select_related("venture_account__venture_type")
+        )
+        vent_dep_by_month = defaultdict(list)
+        for d in vent_dep_qs:
+            vent_dep_by_month[d.month.month].append(d)
+        
+        vent_pay_by_month = defaultdict(list)
+        for p in vent_pay_qs:
+            vent_pay_by_month[p.month.month].append(p)
+
+        # 3. Loans
+        loan_disb_qs = get_monthly_data(
+            LoanDisbursement.objects.filter(
+                loan_account__member=member,
+                created_at__year=year,
+                transaction_status="Completed",
+            ).select_related("loan_account__loan_type")
+        )
+        loan_rep_qs = get_monthly_data(
+            LoanRepayment.objects.filter(
+                loan_account__member=member,
+                created_at__year=year,
+                transaction_status="Completed",
+            ).select_related("loan_account__loan_type")
+        )
+        loan_int_qs = get_monthly_data(
+            TamarindLoanInterest.objects.filter(
+                loan_account__member=member,
+                created_at__year=year,
+            ).select_related("loan_account__loan_type")
+        )
+
+        loan_disb_by_month = defaultdict(list)
+        for d in loan_disb_qs:
+            loan_disb_by_month[d.month.month].append(d)
+
+        loan_rep_by_month = defaultdict(list)
+        for r in loan_rep_qs:
+            loan_rep_by_month[r.month.month].append(r)
+            
+        loan_int_by_month = defaultdict(list)
+        for i in loan_int_qs:
+            loan_int_by_month[i.month.month].append(i)
+
+        # 4. Guarantees
+        new_guarantees_qs = get_monthly_data(
+            GuaranteeRequest.objects.filter(
+                guarantor__member=member,
+                status="Accepted",
+                created_at__year=year,
+            ).select_related("member")
+        )
+        guarantees_by_month = defaultdict(list)
+        for g in new_guarantees_qs:
+            guarantees_by_month[g.month.month].append(g)
+
         monthly_summary = []
 
-        # === 3. LOOP THROUGH EACH MONTH ===
+        # === 3. LOOP THROUGH EACH MONTH (PROCESSING ONLY) ===
         for month in range(1, 13):
             month_name = calendar.month_name[month]
             month_key = f"{month_name} {year}"
 
             # === SAVINGS ===
-            savings_deps = SavingsDeposit.objects.filter(
-                savings_account__member=member,
-                created_at__year=year,
-                created_at__month=month,
-            ).select_related("savings_account__account_type")
-
+            savings_deps = savings_by_month[month]
             savings_by_type = defaultdict(lambda: {"total": Decimal("0"), "deposits": []})
+            
             for dep in savings_deps:
                 stype = dep.savings_account.account_type.name
                 amount = Decimal(str(dep.amount))
@@ -571,17 +736,8 @@ class MemberYearlySummaryView(APIView):
                 yearly["savings"][stype] += amount
 
             # === VENTURES ===
-            vent_deps = VentureDeposit.objects.filter(
-                venture_account__member=member,
-                created_at__year=year,
-                created_at__month=month,
-            ).select_related("venture_account__venture_type")
-
-            vent_pays = VenturePayment.objects.filter(
-                venture_account__member=member,
-                created_at__year=year,
-                created_at__month=month,
-            ).select_related("venture_account__venture_type")
+            vent_deps = vent_dep_by_month[month]
+            vent_pays = vent_pay_by_month[month]
 
             vent_by_type = defaultdict(lambda: {"deposits": [], "payments": []})
             for dep in vent_deps:
@@ -597,25 +753,9 @@ class MemberYearlySummaryView(APIView):
                 yearly["vent_pay"][vtype] += amount
 
             # === LOANS ===
-            disbursements = LoanDisbursement.objects.filter(
-                loan_account__member=member,
-                created_at__year=year,
-                created_at__month=month,
-                transaction_status="Completed",
-            ).select_related("loan_account__loan_type")
-
-            repayments = LoanRepayment.objects.filter(
-                loan_account__member=member,
-                created_at__year=year,
-                created_at__month=month,
-                transaction_status="Completed",
-            ).select_related("loan_account__loan_type")
-
-            interests = TamarindLoanInterest.objects.filter(
-                loan_account__member=member,
-                created_at__year=year,
-                created_at__month=month,
-            ).select_related("loan_account__loan_type")
+            disbursements = loan_disb_by_month[month]
+            repayments = loan_rep_by_month[month]
+            interests = loan_int_by_month[month]
 
             loan_by_type = defaultdict(lambda: {"disbursed": [], "repaid": [], "interest": []})
             for d in disbursements:
@@ -638,13 +778,7 @@ class MemberYearlySummaryView(APIView):
                 yearly["loan_int"][ltype] += amount
 
             # === GUARANTEES (NEW) ===
-            new_guarantees = GuaranteeRequest.objects.filter(
-                guarantor__member=member,
-                status="Accepted",
-                created_at__year=year,
-                created_at__month=month,
-            ).select_related("member") # The person being guaranteed
-
+            new_guarantees = guarantees_by_month[month]
             guarantee_data = {"total_new": Decimal("0"), "transactions": []}
             for gr in new_guarantees:
                 amount = gr.guaranteed_amount
@@ -854,6 +988,11 @@ class MemberYearlySummaryView(APIView):
 # =====================================================================
 
 
+# =====================================================================
+# PDF GENERATION
+# =====================================================================
+
+
 # ------------------------------------------------------------------
 # Async PDF Generator (Playwright)
 # ------------------------------------------------------------------
@@ -905,7 +1044,83 @@ class MemberYearlySummaryPDFView(APIView):
 
         # === PREPARE TABLE DATA ===
         # 1. Extract unique types (sorted)
-        savings_types = set()
+        savings_types = sorted(list({k for m in data["monthly_summary"] for k in m["savings"].keys()}))
+        venture_types = sorted(list({k for m in data["monthly_summary"] for k in m["ventures"]["deposits"].keys()}))
+        loan_types = sorted(list({k for m in data["monthly_summary"] for k in m["loans"]["disbursed"].keys()}))
+
+
+        # 2. Build rows for template
+        # The template expects: month_name, savings_cols, venture_cols, loan_cols
+        # ensuring alignment with the headers
+        table_rows = []
+        months = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ]
+
+        for i, month_name in enumerate(months):
+            m_data = data["monthly_summary"][i]
+
+            # Savings vals
+            s_vals = [m_data["savings"].get(t, 0) for t in savings_types]
+            
+            # Venture vals (Deposits only for now? Or net? The summary usually shows deposits)
+            # The JSON structure has 'deposits' and 'payments' under ventures.
+            # Let's show deposits in the main columns as per typical requirement, or net?
+            # Re-reading previous code, it seemed to list venture types. 
+            # Let's assume deposits for the breakdown columns.
+            v_vals = [m_data["ventures"]["deposits"].get(t, 0) for t in venture_types]
+
+            # Loan vals (Repaid? Disbursed? Outstanding?)
+            # Usually summaries show Repayments or Outstanding. 
+            # The JSON has 'disbursed', 'repaid', 'interest', 'outstanding'.
+            # Let's show 'repaid' as it fits "Activity".
+            # Or maybe we need multiple columns per loan type?
+            # For simplicity and space, let's show 'repaid' for each loan type in the breakdown.
+            l_vals = [m_data["loans"]["repaid"].get(t, 0) for t in loan_types]
+
+            row = {
+                "month": month_name,
+                "savings_cols": s_vals,
+                "venture_cols": v_vals,
+                "loan_cols": l_vals,
+            }
+            table_rows.append(row)
+        
+        # Calculate active guarantees total
+        total_active_guarantees = data["summary"]["total_guaranteed_active"]
+
+        # Render HTML
+        html_string = render_to_string(
+            "reports/yearly_summary_pdf.html",
+            {
+                "data": data,
+                "member": member,
+                "year": year,
+                "logo_url": logo_url,
+                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+                "savings_types": savings_types,
+                "venture_types": venture_types,
+                "loan_types": loan_types,
+                "table_rows": table_rows,
+                "total_active_guarantees": total_active_guarantees,
+                "chart_of_accounts": data["chart_of_accounts"]
+            },
+        )
+
+        # Generate PDF
+        try:
+            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url))
+        except Exception as e:
+            logger.error(f"PDF generation failed for {member_no}: {e}")
+            return Response({"error": "Failed to generate PDF"}, status=500)
+
+        # Return download
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        response["Content-Disposition"] = (
+            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
+        )
+        return response
         venture_types = set()
         loan_types = set()
 
@@ -993,7 +1208,7 @@ class MemberYearlySummaryPDFView(APIView):
 
         # Generate PDF
         try:
-            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url))
+            pdf_bytes = generate_pdf(html_string, base_url=request.build_absolute_uri())
         except Exception as e:
             logger.error(f"PDF generation failed for {member_no}: {e}")
             return Response({"error": "Failed to generate PDF"}, status=500)
