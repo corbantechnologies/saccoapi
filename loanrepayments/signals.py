@@ -49,7 +49,7 @@ def release_guarantee_on_repayment(sender, instance, created, **kwargs):
         loan_application=loan_app,
         status="Accepted"
     )
-
+    
     with transaction.atomic():
         for guarantee in guarantees:
             # Calculate release amount based on the ORIGINAL guaranteed amount

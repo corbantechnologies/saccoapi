@@ -10,30 +10,32 @@
                 margin: 1cm;
 
                 @top-center {
-                    content: "Tamarind SACCO";
-                    font-size: 10pt;
+                    content: "Tamarind SACCO | Annual Summary";
+                    font-size: 9pt;
                     font-weight: bold;
+                    color: #555;
                 }
 
                 @bottom-center {
                     content: "Page " counter(page) " of " counter(pages);
-                    font-size: 9pt;
-                    color: #666;
+                    font-size: 8pt;
+                    color: #888;
                 }
             }
 
             body {
-                font-family: 'Segoe UI', Tahoma, sans-serif;
+                font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
                 color: #333;
-                line-height: 1.5;
+                line-height: 1.4;
                 font-size: 9pt;
             }
 
+            /* HEADER & INFO */
             .header {
                 text-align: center;
                 margin-bottom: 20px;
-                padding-bottom: 10px;
                 border-bottom: 2px solid #1e40af;
+                padding-bottom: 10px;
             }
 
             .logo {
@@ -43,84 +45,131 @@
 
             .title {
                 margin: 0;
-                font-size: 18pt;
+                font-size: 16pt;
                 color: #1e40af;
+                text-transform: uppercase;
             }
 
             .subtitle {
-                margin: 5px 0;
+                margin: 5px 0 0;
                 font-size: 10pt;
-                color: #666;
+                color: #555;
             }
 
-            .info-box {
-                background: #f8f9fa;
-                padding: 10px;
-                border-radius: 5px;
-                margin-bottom: 15px;
+            .member-info {
+                background: #f0fdf4;
+                border: 1px solid #bbf7d0;
+                padding: 10px 15px;
+                border-radius: 6px;
+                margin-bottom: 20px;
                 display: flex;
                 justify-content: space-between;
                 font-size: 10pt;
             }
 
-            .info-label {
-                font-weight: 600;
-                color: #1e40af;
+            .member-info strong {
+                color: #166534;
             }
 
+            /* SUMMARY CARDS */
+            .summary-grid {
+                display: flex;
+                gap: 15px;
+                margin-bottom: 25px;
+                page-break-inside: avoid;
+            }
+
+            .card {
+                flex: 1;
+                background: #fff;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                padding: 12px;
+                text-align: center;
+                box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.05);
+            }
+
+            .card h3 {
+                margin: 0 0 5px;
+                font-size: 9pt;
+                color: #666;
+                text-transform: uppercase;
+            }
+
+            .card .amount {
+                font-size: 14pt;
+                font-weight: bold;
+                color: #111;
+                margin: 0;
+            }
+
+            .card.total {
+                background: #f8fafc;
+                border-color: #cbd5e1;
+            }
+
+            .card.total .amount {
+                color: #0f172a;
+            }
+
+            /* SECTIONS */
+            .section-title {
+                font-size: 12pt;
+                color: #1e40af;
+                margin: 20px 0 10px;
+                border-bottom: 1px solid #ccc;
+                padding-bottom: 4px;
+            }
+
+            /* TABLES */
             table {
                 width: 100%;
                 border-collapse: collapse;
-                font-size: 8pt;
+                font-size: 8.5pt;
+                margin-bottom: 20px;
+                page-break-inside: avoid;
             }
 
             th,
             td {
-                border: 1px solid #ddd;
-                padding: 4px 6px;
+                border: 1px solid #e2e8f0;
+                padding: 5px 8px;
                 text-align: right;
             }
 
             th {
-                background: #f3f4f6;
-                color: #111;
+                background: #f1f5f9;
+                color: #334155;
                 font-weight: 600;
                 text-align: center;
-                vertical-align: bottom;
             }
 
-            /* Level 1 Headers */
-            .th-section {
-                background: #e5e7eb;
-                font-size: 9pt;
-                border-bottom: 2px solid #ccc;
+            .th-left {
+                text-align: left;
             }
 
-            /* Level 2 Headers */
-            .th-type {
-                background: #f3f4f6;
-                font-weight: bold;
-            }
-
-            /* Level 3 Headers */
-            .th-col {
-                color: #555;
-                font-size: 7.5pt;
+            tr:nth-child(even) {
+                background-color: #f8fafc;
             }
 
             .month-col {
                 text-align: left;
                 font-weight: bold;
-                background: #f9fafb;
-                white-space: nowrap;
+                color: #333;
+                width: 80px;
+                background: #fdfdfd;
+            }
+
+            .zero {
+                color: #cbd5e1;
             }
 
             .footer {
-                margin-top: 30px;
+                margin-top: 40px;
                 text-align: center;
                 font-size: 8pt;
-                color: #888;
-                border-top: 1px solid #eee;
+                color: #94a3b8;
+                border-top: 1px solid #e2e8f0;
                 padding-top: 10px;
             }
         </style>
@@ -131,111 +180,147 @@
         <!-- Header -->
         <div class="header">
             <img src="{{ logo_url }}" alt="Logo" class="logo">
-            <h1 class="title">Annual Financial Summary</h1>
-            <p class="subtitle">Year: {{ year }} | Generated: {{ generated_at }}</p>
+            <h1 class="title">Member Financial Summary</h1>
+            <p class="subtitle">{{ year }} Statement</p>
         </div>
 
         <!-- Member Info -->
-        <div class="info-box">
-            <div><span class="info-label">Member:</span> {{ member.member_no }} - {{ member.get_full_name }}</div>
-            <div><span class="info-label">Email:</span> {{ member.email|default:"N/A" }}</div>
-            <div><span class="info-label">Phone:</span> {{ member.phone|default:"N/A" }}</div>
+        <div class="member-info">
+            <div><strong>Member:</strong> {{ member.member_no }} - {{ member.get_full_name }}</div>
+            <div><strong>Email:</strong> {{ member.email|default:"-" }}</div>
+            <div><strong>Phone:</strong> {{ member.phone|default:"-" }}</div>
         </div>
 
-        <!-- Summary Table -->
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="card">
+                <h3>Total Savings</h3>
+                <p class="amount">{{ chart_of_accounts.total_savings|floatformat:2 }}</p>
+            </div>
+            <div class="card">
+                <h3>Net Ventures</h3>
+                <p class="amount">{{ chart_of_accounts.total_ventures|floatformat:2 }}</p>
+            </div>
+            <div class="card">
+                <h3>Loan Outstanding</h3>
+                <p class="amount">{{ chart_of_accounts.total_loans|floatformat:2 }}</p>
+            </div>
+            <div class="card total">
+                <h3>Guaranteed (Active)</h3>
+                <p class="amount">{{ total_active_guarantees|floatformat:2 }}</p>
+            </div>
+        </div>
+
+        <!-- 1. SAVINGS SECTION -->
+        <h2 class="section-title">Savings Breakdown</h2>
         <table>
             <thead>
-                <!-- Level 1: Sections -->
                 <tr>
-                    <th rowspan="3" class="th-section" style="width: 60px;">Month</th>
-                    {% if savings_types %}
-                    <th colspan="{{ savings_types|length|add:savings_types|length }}" class="th-section">Savings</th>
-                    {% endif %}
-                    {% if venture_types %}
-                    <th colspan="{{ venture_types|length|add:venture_types|length|add:venture_types|length }}"
-                        class="th-section">Ventures</th>
-                    {% endif %}
-                    {% if loan_types %}
-                    <th colspan="{{ loan_types|length|add:loan_types|length|add:loan_types|length|add:loan_types|length }}"
-                        class="th-section">Loans</th>
-                    {% endif %}
-                    <th rowspan="2" class="th-section">Guarantees</th>
-                </tr>
-
-                <!-- Level 2: Types -->
-                <tr>
+                    <th class="th-left">Month</th>
                     {% for t in savings_types %}
-                    <th colspan="2" class="th-type">{{ t }}</th>
-                    {% endfor %}
-                    {% for t in venture_types %}
-                    <th colspan="3" class="th-type">{{ t }}</th>
-                    {% endfor %}
-                    {% for t in loan_types %}
-                    <th colspan="4" class="th-type">{{ t }}</th>
+                    <th colspan="2">{{ t }}</th>
                     {% endfor %}
                 </tr>
-
-                <!-- Level 3: Columns -->
                 <tr>
+                    <th></th>
                     {% for t in savings_types %}
-                    <th class="th-col">Dep</th>
-                    <th class="th-col">Bal</th>
+                    <th>Dep</th>
+                    <th>Bal</th>
                     {% endfor %}
-                    {% for t in venture_types %}
-                    <th class="th-col">Dep</th>
-                    <th class="th-col">Pay</th>
-                    <th class="th-col">Bal</th>
-                    {% endfor %}
-                    {% for t in loan_types %}
-                    <th class="th-col">Disb</th>
-                    <th class="th-col">Rep</th>
-                    <th class="th-col">Int</th>
-                    <th class="th-col">Out</th>
-                    {% endfor %}
-                    <th class="th-col">Amt</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in table_rows %}
                 <tr>
                     <td class="month-col">{{ row.month }}</td>
-
-                    <!-- Savings -->
                     {% for s in row.savings %}
-                    <td>{{ s.dep|floatformat:2 }}</td>
-                    <td>{{ s.bal|floatformat:2 }}</td>
+                    <td class="{% if s.dep == 0 %}zero{% endif %}">{{ s.dep|floatformat:2 }}</td>
+                    <td class="{% if s.bal == 0 %}zero{% endif %}" style="font-weight: 500;">{{ s.bal|floatformat:2 }}
+                    </td>
                     {% endfor %}
-
-                    <!-- Ventures -->
-                    {% for v in row.ventures %}
-                    <td>{{ v.dep|floatformat:2 }}</td>
-                    <td>{{ v.pay|floatformat:2 }}</td>
-                    <td>{{ v.bal|floatformat:2 }}</td>
-                    {% endfor %}
-
-                    <!-- Loans -->
-                    {% for l in row.loans %}
-                    <td>{{ l.disb|floatformat:2 }}</td>
-                    <td>{{ l.rep|floatformat:2 }}</td>
-                    <td>{{ l.int|floatformat:2 }}</td>
-                    <td>{{ l.out|floatformat:2 }}</td>
-                    {% endfor %}
-                    
-                    <!-- Guarantees -->
-                    <td>{{ row.guarantees|floatformat:2 }}</td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="100" style="text-align: center; padding: 20px;">No data available</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
 
+        <!-- 2. VENTURES SECTION -->
+        {% if venture_types %}
+        <h2 class="section-title">Ventures Breakdown</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th class="th-left">Month</th>
+                    {% for t in venture_types %}
+                    <th colspan="3">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <th></th>
+                    {% for t in venture_types %}
+                    <th>Dep</th>
+                    <th>Paid</th>
+                    <th>Bal</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for v in row.ventures %}
+                    <td class="{% if v.dep == 0 %}zero{% endif %}">{{ v.dep|floatformat:2 }}</td>
+                    <td class="{% if v.pay == 0 %}zero{% endif %}">{{ v.pay|floatformat:2 }}</td>
+                    <td class="{% if v.bal == 0 %}zero{% endif %}" style="font-weight: 500;">{{ v.bal|floatformat:2 }}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- 3. LOANS SECTION -->
+        {% if loan_types %}
+        <h2 class="section-title">Loans Breakdown</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th class="th-left">Month</th>
+                    {% for t in loan_types %}
+                    <th colspan="4">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    <th></th>
+                    {% for t in loan_types %}
+                    <th>Disb</th>
+                    <th>Rep</th>
+                    <th>Int</th>
+                    <th>Out</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for l in row.loans %}
+                    <td class="{% if l.disb == 0 %}zero{% endif %}">{{ l.disb|floatformat:2 }}</td>
+                    <td class="{% if l.rep == 0 %}zero{% endif %}">{{ l.rep|floatformat:2 }}</td>
+                    <td class="{% if l.int == 0 %}zero{% endif %}">{{ l.int|floatformat:2 }}</td>
+                    <td class="{% if l.out == 0 %}zero{% endif %}" style="font-weight: 500;">{{ l.out|floatformat:2 }}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
         <!-- Footer -->
         <div class="footer">
-            <p>© {{ year }} Tamarind SACCO | All rights reserved | Confidential Document</p>
-            <p>For inquiries: <a href="mailto:finance@wananchimali.com">finance@wananchimali.com</a></p>
+            <p>© {{ year }} Tamarind SACCO. All figures are in your local currency. This document is system generated.
+            </p>
         </div>
 
     </body>

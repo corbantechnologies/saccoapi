@@ -2,6 +2,7 @@ from rest_framework import serializers
 
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
+from savingstypes.serializers import SavingsTypeSerializer
 from savingsdeposits.serializers import SavingsDepositSerializer
 
 
@@ -26,3 +27,8 @@ class SavingsAccountSerializer(serializers.ModelSerializer):
             "updated_at",
             "deposits",
         ]
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        representation["account_type"] = SavingsTypeSerializer(instance.account_type).data
+        return representation
