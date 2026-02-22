@@ -200,57 +200,84 @@
             </div>
         </div>
 
-        <!-- Detailed Monthly Matrix -->
+        <!-- I. SAVINGS PORTFOLIO -->
+        <div class="section-header" style="margin-bottom: 0;">I. SACCO SAVINGS PORTFOLIO</div>
         <table>
             <thead>
-                <tr class="section-header">
-                    <th colspan="1">Period</th>
-                    <th colspan="{{ savings_types|length|add:savings_types|length }}">I. SACCO SAVINGS PORTFOLIO</th>
-                    <th colspan="{{ venture_types|length|add:venture_types|length|add:venture_types|length }}">II. SACCO
-                        VENTURES PORTFOLIO</th>
-                    <th colspan="1">III. GUARANTEES</th>
-                </tr>
                 <tr class="sub-header">
-                    <th>Month</th>
+                    <th style="width: 80px;">Month</th>
                     {% for t in savings_types %}
                     <th colspan="2">{{ t }}</th>
                     {% endfor %}
-                    {% for t in venture_types %}
-                    <th colspan="3">{{ t }}</th>
-                    {% endfor %}
-                    <th>New</th>
                 </tr>
                 <tr class="sub-header" style="background: #f8fafc">
                     <th></th>
                     {% for t in savings_types %}
-                    <th>In</th>
-                    <th>Bal</th>
+                    <th>Deposits</th>
+                    <th>Balance</th>
                     {% endfor %}
-                    {% for t in venture_types %}
-                    <th>In</th>
-                    <th>Out</th>
-                    <th>Bal</th>
-                    {% endfor %}
-                    <th>Requests</th>
                 </tr>
             </thead>
             <tbody>
                 {% for row in table_rows %}
                 <tr>
                     <td class="month-col">{{ row.month }}</td>
-                    <!-- Savings -->
                     {% for s in row.savings %}
                     <td>{{ s.dep|floatformat:0 }}</td>
-                    <td style="background:#f1f5f9">{{ s.bal|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9; font-weight:600">{{ s.bal|floatformat:0 }}</td>
                     {% endfor %}
-                    <!-- Ventures -->
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- II. VENTURES PORTFOLIO -->
+        <div class="section-header" style="margin-bottom: 0; margin-top: 15px;">II. SACCO VENTURES PORTFOLIO</div>
+        <table>
+            <thead>
+                <tr class="sub-header">
+                    <th style="width: 80px;">Month</th>
+                    {% for t in venture_types %}
+                    <th colspan="3">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header" style="background: #f8fafc">
+                    <th></th>
+                    {% for t in venture_types %}
+                    <th>Income</th>
+                    <th>Expense</th>
+                    <th>Net Pos.</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
                     {% for v in row.ventures %}
                     <td>{{ v.dep|floatformat:0 }}</td>
                     <td>{{ v.pay|floatformat:0 }}</td>
-                    <td style="background:#f1f5f9">{{ v.bal|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9; font-weight:600">{{ v.bal|floatformat:0 }}</td>
                     {% endfor %}
-                    <!-- Guarantees -->
-                    <td>{{ row.total_guarantees|floatformat:0 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- III. GUARANTEES PORTFOLIO -->
+        <div class="section-header" style="margin-bottom: 0; margin-top: 15px;">III. SACCO GUARANTEES</div>
+        <table>
+            <thead>
+                <tr class="sub-header">
+                    <th style="width: 80px;">Month</th>
+                    <th>New Guarantee Requests (Accepted)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    <td style="text-align: center; font-weight:600">{{ row.total_guarantees|floatformat:0 }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
