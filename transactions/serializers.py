@@ -11,6 +11,7 @@ from venturepayments.models import VenturePayment
 from savingswithdrawals.models import SavingsWithdrawal
 from savingsdeposits.models import SavingsDeposit
 from loandisbursements.models import LoanDisbursement
+from memberfees.models import MemberFee
 from loanrepayments.models import LoanRepayment
 
 User = get_user_model()
@@ -25,6 +26,7 @@ class AccountSerializer(serializers.ModelSerializer):
     loan_interest = serializers.SerializerMethodField()
     loan_disbursements = serializers.SerializerMethodField()
     loan_repayments = serializers.SerializerMethodField()
+    fees = serializers.SerializerMethodField()
     member_name = serializers.SerializerMethodField()
 
     class Meta:
@@ -38,6 +40,7 @@ class AccountSerializer(serializers.ModelSerializer):
             "loan_interest",
             "loan_disbursements",
             "loan_repayments",
+            "fees",
         )
 
     def get_savings_accounts(self, obj):

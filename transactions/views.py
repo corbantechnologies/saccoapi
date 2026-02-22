@@ -44,6 +44,9 @@ from ventures.models import VentureAccount
 from loans.models import LoanAccount
 from loanrepayments.models import LoanRepayment
 from loanintereststamarind.models import TamarindLoanInterest
+from feespayments.models import FeePayment
+from memberfees.models import MemberFee
+from feetypes.models import FeeType
 from loandisbursements.models import LoanDisbursement
 from savings.models import SavingsAccount
 from guaranteerequests.models import GuaranteeRequest
@@ -103,6 +106,7 @@ class AccountListDownloadView(generics.ListAPIView):
         savings_types = list(SavingsType.objects.values_list("name", flat=True))
         venture_types = list(VentureType.objects.values_list("name", flat=True))
         loan_types = list(LoanType.objects.values_list("name", flat=True))
+        fee_types = list(FeeType.objects.values_list("name", flat=True))
 
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
@@ -167,6 +171,10 @@ class AccountListDownloadView(generics.ListAPIView):
                     f"{lt} Interest Amount",
                 ]
 
+            # Fees
+            for ft in fee_types:
+                headers += [f"{ft} Account", f"{ft} Amount"]
+
             # Optional: Payment Method
             headers += ["Payment Method"]
 
@@ -190,6 +198,8 @@ class AccountListDownloadView(generics.ListAPIView):
                 for lt in loan_types:
                     row[f"{lt} Account"] = row[f"{lt} Disbursement Amount"] = ""
                     row[f"{lt} Repayment Amount"] = row[f"{lt} Interest Amount"] = ""
+                for ft in fee_types:
+                    row[f"{ft} Account"] = row[f"{ft} Amount"] = ""
 
                 # === Fill from existing data ===
                 # Savings
@@ -207,6 +217,13 @@ class AccountListDownloadView(generics.ListAPIView):
                 }
                 for acc_no, lt_name, out_bal in user["loan_accounts"]:
                     row[f"{lt_name} Account"] = acc_no
+
+                # Fees
+                # Note: Assuming MemberFee info is available in serialized user data.
+                # If not, we'll need to update AccountSerializer.
+                if "fees" in user:
+                    for fee in user["fees"]:
+                        row[f"{fee['fee_type_name']} Account"] = fee["account_number"]
 
                 # Sum totals (for reference only — not used in bulk)
                 for amt, _, lt_name, _ in user["loan_disbursements"]:
@@ -265,10 +282,11 @@ class CombinedBulkUploadView(generics.CreateAPIView):
         savings_types = list(SavingsType.objects.values_list("name", flat=True))
         venture_types = list(VentureType.objects.values_list("name", flat=True))
         loan_types = list(LoanType.objects.values_list("name", flat=True))
+        fee_types = list(FeeType.objects.values_list("name", flat=True))
 
         # Validate: At least one valid account column
         valid_pairs = 0
-        for t in savings_types + venture_types + loan_types:
+        for t in savings_types + venture_types + loan_types + fee_types:
             acc_col = f"{t} Account"
             if acc_col in reader.fieldnames:
                 valid_pairs += 1
@@ -406,6 +424,25 @@ class CombinedBulkUploadView(generics.CreateAPIView):
 
                             loan_acc.save()
 
+                    # === FEES ===
+                    for ft in fee_types:
+                        acc_key = f"{ft} Account"
+                        amt_key = f"{ft} Amount"
+                        if row.get(acc_key) and row.get(amt_key):
+                            amount = Decimal(row[amt_key])
+                            if amount <= 0:
+                                raise ValueError(f"{amt_key} must be > 0")
+                            
+                            member_fee = MemberFee.objects.get(account_number=row[acc_key])
+                            FeePayment.objects.create(
+                                member_fee=member_fee,
+                                amount=amount,
+                                paid_by=admin,
+                                payment_method=row.get("Payment Method", "Cash"),
+                                transaction_status="Completed",
+                            )
+                            success_count += 1
+
                 except Exception as e:
                     error_count += 1
                     errors.append({"row": idx, "error": str(e)})
@@ -453,6 +490,7 @@ class MemberYearlySummaryView(APIView):
         all_savings_types = {t.name: t for t in SavingsType.objects.all()}
         all_venture_types = {t.name: t for t in VentureType.objects.all()}
         all_loan_types = {t.name: t for t in LoanType.objects.all()}
+        all_fee_types = {t.name: t for t in FeeType.objects.all()}
 
         # === 1. FETCH PRIOR YEAR ENDING BALANCES (for B/F in January) ===
         prior_year = year - 1
@@ -530,21 +568,22 @@ class MemberYearlySummaryView(APIView):
 
         # === 2. INITIALIZE RUNNING BALANCES WITH PRIOR YEAR ===
         running = {
-            "savings": prior_balances["savings"].copy(),
-            "venture_net": prior_balances["venture_net"].copy(),
-            "loan_out": prior_balances["loan_out"].copy(),
-        }
+            "savings": {name: Decimal("0") for name in all_savings_types.keys()},
+            "venture_net": {name: Decimal("0") for name in all_venture_types.keys()},
+            "loan_out": {name: Decimal("0") for name in all_loan_types.keys()},
+        }  # type: dict[str, dict[str, Decimal]]
 
         # === YEARLY ACCUMULATORS ===
         yearly = {
-            "savings": defaultdict(Decimal),
-            "vent_dep": defaultdict(Decimal),
-            "vent_pay": defaultdict(Decimal),
-            "loan_disb": defaultdict(Decimal),
-            "loan_rep": defaultdict(Decimal),
-            "loan_int": defaultdict(Decimal),
-            "guarantees": defaultdict(Decimal),
-        }
+            "savings": {name: Decimal("0") for name in all_savings_types.keys()},
+            "vent_dep": {name: Decimal("0") for name in all_venture_types.keys()},
+            "vent_pay": {name: Decimal("0") for name in all_venture_types.keys()},
+            "loan_disb": {name: Decimal("0") for name in all_loan_types.keys()},
+            "loan_rep": {name: Decimal("0") for name in all_loan_types.keys()},
+            "loan_int": {name: Decimal("0") for name in all_loan_types.keys()},
+            "fees": {name: Decimal("0") for name in all_fee_types.keys()},
+            "guarantees": {"new": Decimal("0")},
+        }  # type: dict[str, dict[str, Decimal]]
 
         # === FETCH GUARANTOR PROFILE ===
         try:
@@ -577,9 +616,12 @@ class MemberYearlySummaryView(APIView):
         # So we fetch all transactions for the year (one query per model) and group in Python.
         # This is strictly better than 12 queries per model.
 
-        savings_by_month = defaultdict(list)
+        savings_by_month = {}  # type: dict[int, list]
         for dep in savings_qs:
-            savings_by_month[dep.month.month].append(dep)
+            m = dep.month.month
+            if m not in savings_by_month:
+                savings_by_month[m] = []
+            savings_by_month[m].append(dep)
 
         # 2. Ventures
         vent_dep_qs = get_monthly_data(
@@ -594,13 +636,19 @@ class MemberYearlySummaryView(APIView):
                 created_at__year=year
             ).select_related("venture_account__venture_type")
         )
-        vent_dep_by_month = defaultdict(list)
+        vent_dep_by_month = {}  # type: dict[int, list]
         for d in vent_dep_qs:
-            vent_dep_by_month[d.month.month].append(d)
+            m = d.month.month
+            if m not in vent_dep_by_month:
+                vent_dep_by_month[m] = []
+            vent_dep_by_month[m].append(d)
         
-        vent_pay_by_month = defaultdict(list)
+        vent_pay_by_month = {}  # type: dict[int, list]
         for p in vent_pay_qs:
-            vent_pay_by_month[p.month.month].append(p)
+            m = p.month.month
+            if m not in vent_pay_by_month:
+                vent_pay_by_month[m] = []
+            vent_pay_by_month[m].append(p)
 
         # 3. Loans
         loan_disb_qs = get_monthly_data(
@@ -624,17 +672,26 @@ class MemberYearlySummaryView(APIView):
             ).select_related("loan_account__loan_type")
         )
 
-        loan_disb_by_month = defaultdict(list)
+        loan_disb_by_month = {}  # type: dict[int, list]
         for d in loan_disb_qs:
-            loan_disb_by_month[d.month.month].append(d)
+            m = d.month.month
+            if m not in loan_disb_by_month:
+                loan_disb_by_month[m] = []
+            loan_disb_by_month[m].append(d)
 
-        loan_rep_by_month = defaultdict(list)
+        loan_rep_by_month = {}  # type: dict[int, list]
         for r in loan_rep_qs:
-            loan_rep_by_month[r.month.month].append(r)
+            m = r.month.month
+            if m not in loan_rep_by_month:
+                loan_rep_by_month[m] = []
+            loan_rep_by_month[m].append(r)
             
-        loan_int_by_month = defaultdict(list)
+        loan_int_by_month = {}  # type: dict[int, list]
         for i in loan_int_qs:
-            loan_int_by_month[i.month.month].append(i)
+            m = i.month.month
+            if m not in loan_int_by_month:
+                loan_int_by_month[m] = []
+            loan_int_by_month[m].append(i)
 
         # 4. Guarantees
         new_guarantees_qs = get_monthly_data(
@@ -644,9 +701,26 @@ class MemberYearlySummaryView(APIView):
                 created_at__year=year,
             ).select_related("member")
         )
-        guarantees_by_month = defaultdict(list)
+        guarantees_by_month = {}  # type: dict[int, list]
         for g in new_guarantees_qs:
-            guarantees_by_month[g.month.month].append(g)
+            m = g.month.month
+            if m not in guarantees_by_month:
+                guarantees_by_month[m] = []
+            guarantees_by_month[m].append(g)
+
+        # 5. Fees
+        fees_qs = get_monthly_data(
+            FeePayment.objects.filter(
+                member_fee__member=member,
+                created_at__year=year
+            ).select_related("member_fee__fee_type")
+        )
+        fees_by_month = {}  # type: dict[int, list]
+        for f in fees_qs:
+            m = f.month.month
+            if m not in fees_by_month:
+                fees_by_month[m] = []
+            fees_by_month[m].append(f)
 
         monthly_summary = []
 
@@ -656,67 +730,116 @@ class MemberYearlySummaryView(APIView):
             month_key = f"{month_name} {year}"
 
             # === SAVINGS ===
-            savings_deps = savings_by_month[month]
-            savings_by_type = defaultdict(lambda: {"total": Decimal("0"), "deposits": []})
+            savings_deps = savings_by_month.get(month, [])
+            savings_by_type = {}  # type: dict[str, dict]
             
             for dep in savings_deps:
+                # type: ignore
                 stype = dep.savings_account.account_type.name
                 amount = Decimal(str(dep.amount))
-                savings_by_type[stype]["total"] += amount
-                savings_by_type[stype]["deposits"].append({"type": stype, "amount": float(amount)})
-                yearly["savings"][stype] += amount
+                if stype not in savings_by_type:
+                    savings_by_type[stype] = {"total": Decimal("0"), "deposits": []}
+                savings_by_type[stype]["total"] += amount # type: ignore
+                savings_by_type[stype]["deposits"].append({"type": stype, "amount": float(amount)}) # type: ignore
+                
+                s_yearly = yearly["savings"]
+                s_yearly[stype] = s_yearly.get(stype, Decimal("0")) + amount # type: ignore
 
             # === VENTURES ===
-            vent_deps = vent_dep_by_month[month]
-            vent_pays = vent_pay_by_month[month]
+            vent_deps = vent_dep_by_month.get(month, [])
+            vent_pays = vent_pay_by_month.get(month, [])
 
-            vent_by_type = defaultdict(lambda: {"deposits": [], "payments": []})
+            vent_by_type = {}  # type: dict[str, dict]
             for dep in vent_deps:
+                # type: ignore
                 vtype = dep.venture_account.venture_type.name
                 amount = Decimal(str(dep.amount))
-                vent_by_type[vtype]["deposits"].append({"venture_type": vtype, "amount": float(amount)})
-                yearly["vent_dep"][vtype] += amount
+                if vtype not in vent_by_type:
+                    vent_by_type[vtype] = {"deposits": [], "payments": []}
+                vent_by_type[vtype]["deposits"].append({"venture_type": vtype, "amount": float(amount)}) # type: ignore
+                
+                v_yearly = yearly["vent_dep"]
+                v_yearly[vtype] = v_yearly.get(vtype, Decimal("0")) + amount # type: ignore
 
             for pay in vent_pays:
+                # type: ignore
                 vtype = pay.venture_account.venture_type.name
                 amount = Decimal(str(pay.amount))
-                vent_by_type[vtype]["payments"].append({"venture_type": vtype, "amount": float(amount)})
-                yearly["vent_pay"][vtype] += amount
+                if vtype not in vent_by_type:
+                    vent_by_type[vtype] = {"deposits": [], "payments": []}
+                vent_by_type[vtype]["payments"].append({"venture_type": vtype, "amount": float(amount)}) # type: ignore
+                
+                vp_yearly = yearly["vent_pay"]
+                vp_yearly[vtype] = vp_yearly.get(vtype, Decimal("0")) + amount # type: ignore
 
             # === LOANS ===
-            disbursements = loan_disb_by_month[month]
-            repayments = loan_rep_by_month[month]
-            interests = loan_int_by_month[month]
+            disbursements = loan_disb_by_month.get(month, [])
+            repayments = loan_rep_by_month.get(month, [])
+            interests = loan_int_by_month.get(month, [])
 
-            loan_by_type = defaultdict(lambda: {"disbursed": [], "repaid": [], "interest": []})
+            loan_by_type = {}  # type: dict[str, dict]
             for d in disbursements:
+                # type: ignore
                 ltype = d.loan_account.loan_type.name
                 amount = Decimal(str(d.amount))
-                loan_by_type[ltype]["disbursed"].append({"loan_type": ltype, "amount": float(amount)})
-                yearly["loan_disb"][ltype] += amount
+                if ltype not in loan_by_type:
+                    loan_by_type[ltype] = {"disbursed": [], "repaid": [], "interest": []}
+                loan_by_type[ltype]["disbursed"].append({"loan_type": ltype, "amount": float(amount)}) # type: ignore
+                
+                ld_yearly = yearly["loan_disb"]
+                ld_yearly[ltype] = ld_yearly.get(ltype, Decimal("0")) + amount # type: ignore
 
             for r in repayments:
+                # type: ignore
                 ltype = r.loan_account.loan_type.name
                 amount = Decimal(str(r.amount))
+                if ltype not in loan_by_type:
+                    loan_by_type[ltype] = {"disbursed": [], "repaid": [], "interest": []}
                 if r.repayment_type != "Interest Payment":
                     loan_by_type[ltype]["repaid"].append({"loan_type": ltype, "amount": float(amount)})
-                    yearly["loan_rep"][ltype] += amount
+                    
+                    lr_yearly = yearly["loan_rep"]
+                    lr_yearly[ltype] = lr_yearly.get(ltype, Decimal("0")) + amount
 
             for i in interests:
+                # type: ignore
                 ltype = i.loan_account.loan_type.name
                 amount = Decimal(str(i.amount))
-                loan_by_type[ltype]["interest"].append({"loan_type": ltype, "amount": float(amount)})
-                yearly["loan_int"][ltype] += amount
+                if ltype not in loan_by_type:
+                    loan_by_type[ltype] = {"disbursed": [], "repaid": [], "interest": []}
+                loan_by_type[ltype]["interest"].append({"loan_type": ltype, "amount": float(amount)}) # type: ignore
+                
+                li_yearly = yearly["loan_int"]
+                li_yearly[ltype] = li_yearly.get(ltype, Decimal("0")) + amount # type: ignore
+
+            # === FEES ===
+            fees = fees_by_month.get(month, [])
+            fees_by_type = {}  # type: dict[str, dict]
+            for f in fees:
+                # type: ignore
+                ftype = f.member_fee.fee_type.name
+                amount = Decimal(str(f.amount))
+                if ftype not in fees_by_type:
+                    fees_by_type[ftype] = {"total": Decimal("0"), "payments": []}
+                fees_by_type[ftype]["total"] += amount # type: ignore
+                fees_by_type[ftype]["payments"].append({"type": ftype, "amount": float(amount)}) # type: ignore
+                
+                f_yearly = yearly["fees"]
+                f_yearly[ftype] = f_yearly.get(ftype, Decimal("0")) + amount # type: ignore
 
             # === GUARANTEES (NEW) ===
-            new_guarantees = guarantees_by_month[month]
+            new_guarantees = guarantees_by_month.get(month, [])
             guarantee_data = {"total_new": Decimal("0"), "transactions": []}
             for gr in new_guarantees:
-                amount = gr.guaranteed_amount
-                current = gr.current_balance if gr.current_balance is not None else amount
+                # type: ignore
+                amount = Decimal(str(gr.guaranteed_amount))
+                current = Decimal(str(gr.current_balance if gr.current_balance is not None else amount))
                 guarantee_data["total_new"] += amount
-                yearly["guarantees"]["new"] += amount
-                guarantee_data["transactions"].append({
+                
+                g_yearly = yearly["guarantees"]
+                g_yearly["new"] = g_yearly.get("new", Decimal("0")) + amount # type: ignore
+                
+                guarantee_data["transactions"].append({ # type: ignore
                     "borrower_name": f"{gr.member.first_name} {gr.member.last_name}",
                     "borrower_no": gr.member.member_no,
                     "amount": float(amount),
@@ -726,78 +849,93 @@ class MemberYearlySummaryView(APIView):
 
             # === UPDATE RUNNING BALANCES ===
             for name, data in savings_by_type.items():
-                running["savings"][name] += data["total"]
+                r_savings = running["savings"]
+                r_savings[name] = Decimal(str(r_savings.get(name, 0))) + Decimal(str(data["total"]))  # type: ignore
             for name, data in vent_by_type.items():
-                dep = sum(d["amount"] for d in data["deposits"])
-                pay = sum(p["amount"] for p in data["payments"])
-                running["venture_net"][name] += Decimal(str(dep)) - Decimal(str(pay))
+                dep = sum([Decimal(str(d["amount"])) for d in data.get("deposits", [])]) # type: ignore
+                pay = sum([Decimal(str(p["amount"])) for p in data.get("payments", [])]) # type: ignore
+                r_vent = running["venture_net"]
+                r_vent[name] = Decimal(str(r_vent.get(name, 0))) + (dep - pay)  # type: ignore
             for name, data in loan_by_type.items():
-                disb = sum(d["amount"] for d in data["disbursed"])
-                rep = sum(r["amount"] for r in data["repaid"])
-                running["loan_out"][name] += Decimal(str(disb)) - Decimal(str(rep))
+                disb = sum([Decimal(str(d["amount"])) for d in data.get("disbursed", [])]) # type: ignore
+                rep = sum([Decimal(str(r["amount"])) for r in data.get("repaid", [])]) # type: ignore
+                r_loan = running["loan_out"]
+                r_loan[name] = Decimal(str(r_loan.get(name, 0))) + (disb - rep)  # type: ignore
 
             # === CALCULATE MONTHLY TOTALS ===
-            total_savings_month = sum(item["total"] for item in savings_by_type.values())
-            total_vent_dep_month = sum(sum(d["amount"] for d in data["deposits"]) for data in vent_by_type.values())
-            total_vent_pay_month = sum(sum(p["amount"] for p in data["payments"]) for data in vent_by_type.values())
+            total_savings_month = sum([Decimal(str(v["total"])) for v in savings_by_type.values()])
+            total_vent_dep_month = sum([sum([Decimal(str(d["amount"])) for d in data["deposits"]]) for data in vent_by_type.values()])
+            total_vent_pay_month = sum([sum([Decimal(str(p["amount"])) for p in data["payments"]]) for data in vent_by_type.values()])
             total_vent_balance_month = total_vent_dep_month - total_vent_pay_month
 
-            total_loan_disb_month = sum(sum(d["amount"] for d in data["disbursed"]) for data in loan_by_type.values())
-            total_loan_rep_month = sum(sum(r["amount"] for r in data["repaid"]) for data in loan_by_type.values())
-            total_loan_int_month = sum(sum(i["amount"] for i in data["interest"]) for data in loan_by_type.values())
-            total_loan_out_month = sum(running["loan_out"].values())
+            total_loan_disb_month = sum([sum([Decimal(str(d["amount"])) for d in data["disbursed"]]) for data in loan_by_type.values()])
+            total_loan_rep_month = sum([sum([Decimal(str(r["amount"])) for r in data["repaid"]]) for data in loan_by_type.values()])
+            total_loan_int_month = sum([sum([Decimal(str(i["amount"])) for i in data["interest"]]) for data in loan_by_type.values()])
+            total_loan_out_month = sum([Decimal(str(v)) for v in running["loan_out"].values()])
 
             # === ENHANCE by_type WITH TOTALS ===
             enhanced_savings = []
             for name in all_savings_types.keys():
                 data = savings_by_type.get(name, {"total": Decimal("0"), "deposits": []})
-                monthly_total = data["total"]
-                brought = running["savings"][name] - monthly_total
+                monthly_total = Decimal(str(data["total"]))
+                r_savings = running["savings"]
+                brought = Decimal(str(r_savings.get(name, 0))) - monthly_total
                 enhanced_savings.append({
                     "type": name,
                     "amount": float(monthly_total),
                     "total_deposits": float(monthly_total),
                     "deposits": data["deposits"],
                     "balance_brought_forward": float(brought),
-                    "balance_carried_forward": float(running["savings"][name]),
+                    "balance_carried_forward": float(r_savings.get(name, 0)),
                 })
 
             enhanced_ventures = []
             for name in all_venture_types.keys():
                 data = vent_by_type.get(name, {"deposits": [], "payments": []})
-                dep_total = sum(d["amount"] for d in data["deposits"])
-                pay_total = sum(p["amount"] for p in data["payments"])
+                dep_total = sum([Decimal(str(d["amount"])) for d in data.get("deposits", [])]) # type: ignore
+                pay_total = sum([Decimal(str(p["amount"])) for p in data.get("payments", [])]) # type: ignore
                 net_month = dep_total - pay_total
-                brought = running["venture_net"][name] - Decimal(str(net_month))
+                r_vent = running["venture_net"]
+                brought = Decimal(str(r_vent.get(name, 0))) - net_month
                 enhanced_ventures.append({
                     "venture_type": name,
                     "total_venture_deposits": float(dep_total),
                     "total_venture_payments": float(pay_total),
-                    "venture_deposits_transactions": data["deposits"],
-                    "venture_payments_transactions": data["payments"],
+                    "venture_deposits_transactions": data.get("deposits", []), # type: ignore
+                    "venture_payments_transactions": data.get("payments", []), # type: ignore
                     "balance_brought_forward": float(brought),
-                    "balance_carried_forward": float(running["venture_net"][name]),
+                    "balance_carried_forward": float(r_vent.get(name, 0)),
                 })
 
             enhanced_loans = []
             for name in all_loan_types.keys():
                 data = loan_by_type.get(name, {"disbursed": [], "repaid": [], "interest": []})
-                disb_total = sum(d["amount"] for d in data["disbursed"])
-                rep_total = sum(r["amount"] for r in data["repaid"])
-                int_total = sum(i["amount"] for i in data["interest"])
+                disb_total = sum([Decimal(str(d["amount"])) for d in data.get("disbursed", [])]) # type: ignore
+                rep_total = sum([Decimal(str(r["amount"])) for r in data.get("repaid", [])]) # type: ignore
+                int_total = sum([Decimal(str(i["amount"])) for i in data.get("interest", [])]) # type: ignore
                 net_month = disb_total - rep_total
-                brought = running["loan_out"][name] - Decimal(str(net_month))
+                r_loan = running["loan_out"]
+                brought = Decimal(str(r_loan.get(name, 0))) - net_month
                 enhanced_loans.append({
                     "loan_type": name,
                     "total_amount_disbursed": float(disb_total),
                     "total_amount_repaid": float(rep_total),
                     "total_interest_charged": float(int_total),
-                    "total_amount_outstanding": float(running["loan_out"][name]),
-                    "total_amount_disbursed_transactions": data["disbursed"],
-                    "total_amount_repaid_transactions": data["repaid"],
-                    "total_interest_charged_transactions": data["interest"],
+                    "total_amount_outstanding": float(r_loan.get(name, 0)),
+                    "total_amount_disbursed_transactions": data.get("disbursed", []), # type: ignore
+                    "total_amount_repaid_transactions": data.get("repaid", []), # type: ignore
+                    "total_interest_charged_transactions": data.get("interest", []), # type: ignore
                     "balance_brought_forward": float(brought),
-                    "balance_carried_forward": float(running["loan_out"][name]),
+                    "balance_carried_forward": float(r_loan.get(name, 0)),
+                })
+
+            enhanced_fees = []
+            for name in all_fee_types.keys():
+                data = fees_by_type.get(name, {"total": Decimal("0"), "payments": []})
+                enhanced_fees.append({
+                    "type": name,
+                    "amount": float(Decimal(str(data["total"]))),
+                    "payments": data["payments"],
                 })
 
             # === APPEND MONTH WITH FULL SUMMARY + TOTAL BALANCE ===
@@ -806,14 +944,14 @@ class MemberYearlySummaryView(APIView):
                 "savings": {
                     "total_savings": float(total_savings_month),
                     "total_savings_deposits": float(total_savings_month),
-                    "total_balance": float(sum(running["savings"].values())),
+                    "total_balance": float(sum([Decimal(str(v)) for v in running["savings"].values()])),
                     "by_type": enhanced_savings,
                 },
                 "ventures": {
                     "venture_deposits": float(total_vent_dep_month),
                     "venture_payments": float(total_vent_pay_month),
                     "venture_balance": float(total_vent_balance_month),
-                    "total_balance": float(sum(running["venture_net"].values())),
+                    "total_balance": float(sum([Decimal(str(v)) for v in running["venture_net"].values()])),
                     "by_type": enhanced_ventures,
                 },
                 "loans": {
@@ -821,12 +959,16 @@ class MemberYearlySummaryView(APIView):
                     "total_loans_repaid": float(total_loan_rep_month),
                     "total_interest_charged": float(total_loan_int_month),
                     "total_loans_outstanding": float(total_loan_out_month),
-                    "total_balance": float(sum(running["loan_out"].values())),
+                    "total_balance": float(total_loan_out_month),
                     "by_type": enhanced_loans,
                 },
                 "guarantees": {
                     "new_guarantees": float(guarantee_data["total_new"]),
-                    "transactions": guarantee_data["transactions"],
+                    "transactions": guarantee_data["transactions"]
+                },
+                "fees": {
+                    "total_fees": float(sum([float(Decimal(str(v["total"]))) for v in fees_by_type.values()])),
+                    "by_type": enhanced_fees,
                 },
             })
 
@@ -839,6 +981,7 @@ class MemberYearlySummaryView(APIView):
         total_loan_rep = sum(yearly["loan_rep"].values())
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
+        total_fees = sum(yearly["fees"].values())
         total_new_guarantees = yearly["guarantees"]["new"]
 
         # === EXTRACT DECEMBER'S CARRIED FORWARD ===
@@ -904,6 +1047,7 @@ class MemberYearlySummaryView(APIView):
                     "total_loans_repaid": float(total_loan_rep),
                     "total_interest_charged": float(total_loan_int),
                     "total_loans_outstanding": float(total_loan_out),
+                    "total_fees_paid": float(total_fees),
                     "total_guaranteed_active": float(total_active_guarantees),
                     "total_new_guarantees": float(total_new_guarantees),
                     "year_end_balances": year_end_balances,
@@ -950,6 +1094,7 @@ class MemberYearlySummaryPDFView(APIView):
         savings_types = sorted(list({s["type"] for m in data["monthly_summary"] for s in m["savings"]["by_type"]}))
         venture_types = sorted(list({v["venture_type"] for m in data["monthly_summary"] for v in m["ventures"]["by_type"]}))
         loan_types = sorted(list({l["loan_type"] for m in data["monthly_summary"] for l in m["loans"]["by_type"]}))
+        fee_types = sorted(list({f["type"] for m in data["monthly_summary"] for f in m["fees"]["by_type"]}))
 
         table_rows = []
         for m in data["monthly_summary"]:
@@ -958,6 +1103,7 @@ class MemberYearlySummaryPDFView(APIView):
                 "savings": [],
                 "ventures": [],
                 "loans": [],
+                "fees": [],
                 "total_guarantees": m["guarantees"]["new_guarantees"]
             }
             # Savings mapping
@@ -987,6 +1133,13 @@ class MemberYearlySummaryPDFView(APIView):
                     "int": item["total_interest_charged"] if item else 0,
                     "out": item["total_amount_outstanding"] if item else 0
                 })
+            # Fees mapping
+            f_map = {item["type"]: item for item in m["fees"]["by_type"]}
+            for t in fee_types:
+                item = f_map.get(t)
+                row["fees"].append({
+                    "amt": item["amount"] if item else 0
+                })
             table_rows.append(row)
 
         logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
@@ -1001,8 +1154,9 @@ class MemberYearlySummaryPDFView(APIView):
                 "savings_types": savings_types,
                 "venture_types": venture_types,
                 "loan_types": loan_types,
+                "fee_types": fee_types,
                 "table_rows": table_rows,
-                "total_active_guarantees": data["summary"]["total_guaranteed_active"],
+                "total_active_guarantees": data["summary"]["total_guaranteed_active"] if "total_guaranteed_active" in data["summary"] else 0,
                 "chart_of_accounts": data["chart_of_accounts"]
             },
         )
@@ -1034,6 +1188,7 @@ class SACCOSummaryView(APIView):
         all_savings_types = {t.name: t for t in SavingsType.objects.all()}
         all_venture_types = {t.name: t for t in VentureType.objects.all()}
         all_loan_types = {t.name: t for t in LoanType.objects.all()}
+        all_fee_types = {t.name: t for t in FeeType.objects.all()}
 
         # === 1. FETCH PRIOR YEAR ENDING BALANCES (for B/F in January) ===
         prior_year = year - 1
@@ -1102,20 +1257,25 @@ class SACCOSummaryView(APIView):
 
         # === YEARLY ACCUMULATORS ===
         yearly = {
-            "savings": defaultdict(Decimal),
-            "vent_dep": defaultdict(Decimal),
-            "vent_pay": defaultdict(Decimal),
-            "loan_disb": defaultdict(Decimal),
-            "loan_rep": defaultdict(Decimal),
-            "loan_int": defaultdict(Decimal),
-            "guarantees": defaultdict(Decimal),
+            "savings": {name: Decimal("0") for name in all_savings_types.keys()},
+            "vent_dep": {name: Decimal("0") for name in all_venture_types.keys()},
+            "vent_pay": {name: Decimal("0") for name in all_venture_types.keys()},
+            "loan_disb": {name: Decimal("0") for name in all_loan_types.keys()},
+            "loan_rep": {name: Decimal("0") for name in all_loan_types.keys()},
+            "loan_int": {name: Decimal("0") for name in all_loan_types.keys()},
+            "fees": {name: Decimal("0") for name in all_fee_types.keys()},
+            "guarantees": {"new": Decimal("0")},
         }
 
-        # === FETCH TOTAL GUARANTEES ===
         try:
             total_active_guarantees = GuarantorProfile.objects.aggregate(total=Sum('committed_guarantee_amount'))['total'] or Decimal('0')
         except:
             total_active_guarantees = Decimal("0")
+
+        # === FEES ===
+        total_fees = FeePayment.objects.filter(
+            created_at__year=year
+        ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
         # Helper to group by month
         def get_monthly_summary_data(queryset, date_field="created_at"):
@@ -1129,45 +1289,91 @@ class SACCOSummaryView(APIView):
             )
 
         # 1. Savings
-        savings_qs = SavingsDeposit.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "savings_account__account_type__name").annotate(total=Sum("amount"))
-        savings_by_month = defaultdict(lambda: defaultdict(Decimal))
+        savings_qs = SavingsDeposit.objects.filter(created_at__year=year, transaction_status="Completed").annotate(month=TruncMonth("created_at")).values("month", "savings_account__account_type__name").annotate(total=Sum("amount"))
+        savings_by_month = {}  # type: dict[int, dict[str, Decimal]]
         for item in savings_qs:
-            savings_by_month[item["month"].month][item["savings_account__account_type__name"]] = Decimal(str(item["total"]))
+            m = item["month"].month
+            name = item["savings_account__account_type__name"]
+            if m not in savings_by_month:
+                savings_by_month[m] = {}
+            m_s = savings_by_month[m]
+            m_s[name] = Decimal(str(item["total"]))  # type: ignore
 
         # 2. Ventures
         vent_dep_qs = VentureDeposit.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "venture_account__venture_type__name").annotate(total=Sum("amount"))
-        vent_pay_qs = VenturePayment.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "venture_account__venture_type__name").annotate(total=Sum("amount"))
+        vent_pay_qs = VenturePayment.objects.filter(created_at__year=year, transaction_status="Completed").annotate(month=TruncMonth("created_at")).values("month", "venture_account__venture_type__name").annotate(total=Sum("amount"))
         
-        vent_dep_by_month = defaultdict(lambda: defaultdict(Decimal))
+        vent_dep_by_month = {}  # type: dict[int, dict[str, Decimal]]
         for item in vent_dep_qs:
-            vent_dep_by_month[item["month"].month][item["venture_account__venture_type__name"]] = Decimal(str(item["total"]))
+            m = item["month"].month
+            name = item["venture_account__venture_type__name"]
+            if m not in vent_dep_by_month:
+                vent_dep_by_month[m] = {}
+            m_vd = vent_dep_by_month[m]
+            m_vd[name] = Decimal(str(item["total"]))  # type: ignore
         
-        vent_pay_by_month = defaultdict(lambda: defaultdict(Decimal))
+        vent_pay_by_month = {}  # type: dict[int, dict[str, Decimal]]
         for item in vent_pay_qs:
-            vent_pay_by_month[item["month"].month][item["venture_account__venture_type__name"]] = Decimal(str(item["total"]))
+            m = item["month"].month
+            name = item["venture_account__venture_type__name"]
+            if m not in vent_pay_by_month:
+                vent_pay_by_month[m] = {}
+            m_vp = vent_pay_by_month[m]
+            m_vp[name] = Decimal(str(item["total"]))  # type: ignore
 
         # 3. Loans
         loan_disb_qs = LoanDisbursement.objects.filter(created_at__year=year, transaction_status="Completed").annotate(month=TruncMonth("created_at")).values("month", "loan_account__loan_type__name").annotate(total=Sum("amount"))
         loan_rep_qs = LoanRepayment.objects.filter(created_at__year=year, transaction_status="Completed").annotate(month=TruncMonth("created_at")).values("month", "loan_account__loan_type__name").annotate(total=Sum("amount"))
         loan_int_qs = TamarindLoanInterest.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "loan_account__loan_type__name").annotate(total=Sum("amount"))
 
-        loan_disb_by_month = defaultdict(lambda: defaultdict(Decimal))
+        loan_disb_by_month = {}  # type: dict[int, dict[str, Decimal]]
         for item in loan_disb_qs:
-            loan_disb_by_month[item["month"].month][item["loan_account__loan_type__name"]] = Decimal(str(item["total"]))
+            m = item["month"].month
+            name = item["loan_account__loan_type__name"]
+            if m not in loan_disb_by_month:
+                loan_disb_by_month[m] = {}
+            m_ld = loan_disb_by_month[m]
+            m_ld[name] = Decimal(str(item["total"]))  # type: ignore
 
-        loan_rep_by_month = defaultdict(lambda: defaultdict(Decimal))
+        loan_rep_by_month = {}  # type: dict[int, dict[str, Decimal]]
         for item in loan_rep_qs:
-            loan_rep_by_month[item["month"].month][item["loan_account__loan_type__name"]] = Decimal(str(item["total"]))
+            m = item["month"].month
+            name = item["loan_account__loan_type__name"]
+            if m not in loan_rep_by_month:
+                loan_rep_by_month[m] = {}
+            m_lr = loan_rep_by_month[m]
+            m_lr[name] = Decimal(str(item["total"]))  # type: ignore
             
-        loan_int_by_month = defaultdict(lambda: defaultdict(Decimal))
+        loan_int_by_month = {}  # type: dict[int, dict[str, Decimal]]
         for item in loan_int_qs:
-            loan_int_by_month[item["month"].month][item["loan_account__loan_type__name"]] = Decimal(str(item["total"]))
+            m = item["month"].month
+            name = item["loan_account__loan_type__name"]
+            if m not in loan_int_by_month:
+                loan_int_by_month[m] = {}
+            m_li = loan_int_by_month[m]
+            m_li[name] = Decimal(str(item["total"]))  # type: ignore
 
         # 4. Guarantees
         new_guarantees_qs = GuaranteeRequest.objects.filter(status="Accepted", created_at__year=year).annotate(month=TruncMonth("created_at")).values("month").annotate(total=Sum("guaranteed_amount"))
-        guarantees_by_month = defaultdict(Decimal)
+        guarantees_by_month = {}  # type: dict[int, Decimal]
         for item in new_guarantees_qs:
             guarantees_by_month[item["month"].month] = Decimal(str(item["total"]))
+
+        # 5. Fees
+        fees_qs = FeePayment.objects.filter(
+            created_at__year=year
+        ).annotate(
+            month=TruncMonth("created_at")
+        ).values("month", "member_fee__fee_type__name").annotate(total=Sum("amount"))
+
+        fees_by_month = {}  # type: dict[int, dict[str, Decimal]]
+        for item in fees_qs:
+            m = item["month"].month
+            name = item["member_fee__fee_type__name"]
+            if m not in fees_by_month:
+                fees_by_month[m] = {}
+            m_f = fees_by_month[m]
+            m_f[name] = Decimal(str(item["total"]))  # type: ignore
 
         monthly_summary = []
 
@@ -1177,105 +1383,151 @@ class SACCOSummaryView(APIView):
             month_key = f"{month_name} {year}"
 
             # Savings
-            m_savings = savings_by_month[month]
+            m_savings = savings_by_month.get(month, {})
             enhanced_savings = []
             total_savings_month = Decimal("0")
             for name in all_savings_types.keys():
-                amt = m_savings.get(name, Decimal("0"))
-                brought = running["savings"][name]
-                running["savings"][name] += amt
+                amt = Decimal(str(m_savings.get(name, 0)))
+                r_savings = running["savings"]
+                brought = Decimal(str(r_savings.get(name, 0)))
+                
+                current_bal = brought + amt
+                r_savings[name] = current_bal  # type: ignore
                 total_savings_month += amt
-                yearly["savings"][name] += amt
+                
+                s_yearly = yearly["savings"]
+                s_yearly[name] = s_yearly.get(name, Decimal("0")) + amt  # type: ignore
+                
                 enhanced_savings.append({
                     "type": name,
                     "amount": float(amt),
                     "total_deposits": float(amt),
                     "balance_brought_forward": float(brought),
-                    "balance_carried_forward": float(running["savings"][name]),
+                    "balance_carried_forward": float(current_bal),
                 })
 
             # Ventures
-            m_vent_dep = vent_dep_by_month[month]
-            m_vent_pay = vent_pay_by_month[month]
+            m_vent_dep = vent_dep_by_month.get(month, {})
+            m_vent_pay = vent_pay_by_month.get(month, {})
             enhanced_ventures = []
             total_vent_dep_m = Decimal("0")
             total_vent_pay_m = Decimal("0")
             for name in all_venture_types.keys():
-                d_amt = m_vent_dep.get(name, Decimal("0"))
-                p_amt = m_vent_pay.get(name, Decimal("0"))
-                brought = running["venture_net"][name]
-                running["venture_net"][name] += (d_amt - p_amt)
+                d_amt = Decimal(str(m_vent_dep.get(name, 0)))
+                p_amt = Decimal(str(m_vent_pay.get(name, 0)))
+                r_vent = running["venture_net"]
+                brought = Decimal(str(r_vent.get(name, 0)))
+                
+                net_change = d_amt - p_amt
+                current_bal = brought + net_change
+                r_vent[name] = current_bal  # type: ignore
+                
                 total_vent_dep_m += d_amt
                 total_vent_pay_m += p_amt
-                yearly["vent_dep"][name] += d_amt
-                yearly["vent_pay"][name] += p_amt
+                
+                v_yearly_dep = yearly["vent_dep"]
+                v_yearly_dep[name] = v_yearly_dep.get(name, Decimal("0")) + d_amt  # type: ignore
+                v_yearly_pay = yearly["vent_pay"]
+                v_yearly_pay[name] = v_yearly_pay.get(name, Decimal("0")) + p_amt  # type: ignore
+                
                 enhanced_ventures.append({
                     "venture_type": name,
                     "total_venture_deposits": float(d_amt),
                     "total_venture_payments": float(p_amt),
                     "balance_brought_forward": float(brought),
-                    "balance_carried_forward": float(running["venture_net"][name]),
+                    "balance_carried_forward": float(current_bal),
                 })
 
             # Loans
-            m_loan_disb = loan_disb_by_month[month]
-            m_loan_rep = loan_rep_by_month[month]
-            m_loan_int = loan_int_by_month[month]
+            m_loan_disb = loan_disb_by_month.get(month, {})
+            m_loan_rep = loan_rep_by_month.get(month, {})
+            m_loan_int = loan_int_by_month.get(month, {})
             enhanced_loans = []
             total_loan_disb_m = Decimal("0")
             total_loan_rep_m = Decimal("0")
             total_loan_int_m = Decimal("0")
             for name in all_loan_types.keys():
-                d_amt = m_loan_disb.get(name, Decimal("0"))
-                r_amt = m_loan_rep.get(name, Decimal("0"))
-                i_amt = m_loan_int.get(name, Decimal("0"))
-                brought = running["loan_out"][name]
-                running["loan_out"][name] += (d_amt - r_amt)
+                d_amt = Decimal(str(m_loan_disb.get(name, 0)))
+                r_amt = Decimal(str(m_loan_rep.get(name, 0)))
+                i_amt = Decimal(str(m_loan_int.get(name, 0)))
+                r_loan = running["loan_out"]
+                brought = Decimal(str(r_loan.get(name, 0)))
+                
+                net_change = d_amt - r_amt
+                current_bal = brought + net_change
+                r_loan[name] = current_bal  # type: ignore
+                
                 total_loan_disb_m += d_amt
                 total_loan_rep_m += r_amt
                 total_loan_int_m += i_amt
-                yearly["loan_disb"][name] += d_amt
-                yearly["loan_rep"][name] += r_amt
-                yearly["loan_int"][name] += i_amt
+                
+                ld_yearly = yearly["loan_disb"]
+                ld_yearly[name] = ld_yearly.get(name, Decimal("0")) + d_amt  # type: ignore
+                lr_yearly = yearly["loan_rep"]
+                lr_yearly[name] = lr_yearly.get(name, Decimal("0")) + r_amt  # type: ignore
+                li_yearly = yearly["loan_int"]
+                li_yearly[name] = li_yearly.get(name, Decimal("0")) + i_amt  # type: ignore
+                
                 enhanced_loans.append({
                     "loan_type": name,
                     "total_amount_disbursed": float(d_amt),
                     "total_amount_repaid": float(r_amt),
                     "total_interest_charged": float(i_amt),
-                    "total_amount_outstanding": float(running["loan_out"][name]),
+                    "total_amount_outstanding": float(current_bal),
                     "balance_brought_forward": float(brought),
-                    "balance_carried_forward": float(running["loan_out"][name]),
+                    "balance_carried_forward": float(current_bal),
                 })
 
             # Guarantees
-            g_amt = guarantees_by_month[month]
-            yearly["guarantees"]["new"] += g_amt
+            g_amt = Decimal(str(guarantees_by_month.get(month, 0)))
+            g_yearly = yearly["guarantees"]
+            g_yearly["new"] = g_yearly.get("new", Decimal("0")) + g_amt
+
+            # Fees
+            m_fees = fees_by_month.get(month, {})
+            enhanced_fees = []
+            total_fees_month = Decimal("0")
+            for name in all_fee_types.keys():
+                f_amt = Decimal(str(m_fees.get(name, 0)))
+                total_fees_month += f_amt
+                
+                f_yearly = yearly["fees"]
+                f_yearly[name] = f_yearly.get(name, Decimal("0")) + f_amt
+                
+                enhanced_fees.append({
+                    "type": name,
+                    "amount": float(f_amt),
+                })
 
             monthly_summary.append({
-                "month": month_key,
+                "month": month_name,
                 "savings": {
-                    "total_savings": float(total_savings_month),
-                    "total_balance": float(sum(running["savings"].values())),
+                    "total_deposits": float(total_savings_month),
+                    "total_balance": float(sum([Decimal(str(v)) for v in running["savings"].values()])),
                     "by_type": enhanced_savings,
                 },
                 "ventures": {
                     "venture_deposits": float(total_vent_dep_m),
                     "venture_payments": float(total_vent_pay_m),
                     "venture_balance": float(total_vent_dep_m - total_vent_pay_m),
-                    "total_balance": float(sum(running["venture_net"].values())),
+                    "total_balance": float(sum([Decimal(str(v)) for v in running["venture_net"].values()])),
                     "by_type": enhanced_ventures,
                 },
                 "loans": {
                     "total_loans_disbursed": float(total_loan_disb_m),
                     "total_loans_repaid": float(total_loan_rep_m),
                     "total_interest_charged": float(total_loan_int_m),
-                    "total_loans_outstanding": float(sum(running["loan_out"].values())),
-                    "total_balance": float(sum(running["loan_out"].values())),
+                    "total_loans_outstanding": float(sum([Decimal(str(v)) for v in running["loan_out"].values()])),
+                    "total_balance": float(sum([Decimal(str(v)) for v in running["loan_out"].values()])),
                     "by_type": enhanced_loans,
                 },
                 "guarantees": {
                     "new_guarantees": float(g_amt),
-                    "transactions": [] # Detail not practical for SACCO-wide JSON
+                    "transactions": [] 
+                },
+                "fees": {
+                    "total_fees": float(total_fees_month),
+                    "by_type": enhanced_fees,
                 },
             })
 
@@ -1288,6 +1540,7 @@ class SACCOSummaryView(APIView):
         total_loan_rep = sum(yearly["loan_rep"].values())
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
+        total_fees = sum(yearly["fees"].values())
         total_new_guarantees = yearly["guarantees"]["new"]
 
         # Final Response
@@ -1302,29 +1555,29 @@ class SACCOSummaryView(APIView):
                 "total_loans_repaid": float(total_loan_rep),
                 "total_interest_charged": float(total_loan_int),
                 "total_loans_outstanding": float(total_loan_out),
+                "total_fees_paid": float(total_fees),
                 "total_guaranteed_active": float(total_active_guarantees),
                 "total_new_guarantees": float(total_new_guarantees),
             },
-            "monthly_summary": monthly_summary
+            "monthly_summary": monthly_summary,
         }, status=status.HTTP_200_OK)
 
 
 class SACCOSummaryPDFView(APIView):
     """
-    Download consolidated SACCO summary as PDF.
+    Download SACCO yearly financial summary as PDF.
     """
     def get(self, request):
         year = int(request.query_params.get("year", datetime.now().year))
         
-        # 1. Reuse logic from SACCOSummaryView
-        summary_view = SACCOSummaryView()
-        summary_view.request = request
-        data = summary_view.get(request).data
-        
-        # Prep Rows for Template (Same structure as Member summary)
+        # Reuse JSON view
+        json_view = SACCOSummaryView()
+        data = json_view.get(request).data
+
         savings_types = sorted(list({s["type"] for m in data["monthly_summary"] for s in m["savings"]["by_type"]}))
         venture_types = sorted(list({v["venture_type"] for m in data["monthly_summary"] for v in m["ventures"]["by_type"]}))
         loan_types = sorted(list({l["loan_type"] for m in data["monthly_summary"] for l in m["loans"]["by_type"]}))
+        fee_types = sorted(list({f["type"] for m in data["monthly_summary"] for f in m["fees"]["by_type"]}))
 
         table_rows = []
         for m in data["monthly_summary"]:
@@ -1333,6 +1586,7 @@ class SACCOSummaryPDFView(APIView):
                 "savings": [],
                 "ventures": [],
                 "loans": [],
+                "fees": [],
                 "total_guarantees": m["guarantees"]["new_guarantees"]
             }
             s_map = {item["type"]: item for item in m["savings"]["by_type"]}
@@ -1359,6 +1613,12 @@ class SACCOSummaryPDFView(APIView):
                     "int": item["total_interest_charged"] if item else 0,
                     "out": item["total_amount_outstanding"] if item else 0
                 })
+            f_map = {item["type"]: item for item in m["fees"]["by_type"]}
+            for t in fee_types:
+                item = f_map.get(t)
+                row["fees"].append({
+                    "amt": item["amount"] if item else 0
+                })
             table_rows.append(row)
 
         logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
@@ -1372,6 +1632,7 @@ class SACCOSummaryPDFView(APIView):
                 "savings_types": savings_types,
                 "venture_types": venture_types,
                 "loan_types": loan_types,
+                "fee_types": fee_types,
                 "table_rows": table_rows,
                 "total_active_guarantees": data["summary"]["total_guaranteed_active"],
             }
