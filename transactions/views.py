@@ -5,7 +5,6 @@ import cloudinary.uploader
 import logging
 import calendar
 from playwright.async_api import async_playwright
-# from weasyprint import HTML, CSS  <-- Removed
 from datetime import date
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -24,76 +23,6 @@ from rest_framework.views import APIView
 
 
 # ... (imports remain the same)
-
-# =====================================================================
-# PDF GENERATION
-# =====================================================================
-
-
-# ------------------------------------------------------------------
-# Sync PDF Generator (WeasyPrint)
-# ------------------------------------------------------------------
-def generate_pdf(html_content: str, base_url: str = None):
-    """Generate PDF using WeasyPrint"""
-    return HTML(string=html_content, base_url=base_url).write_pdf()
-
-
-class MemberYearlySummaryPDFView(APIView):
-    """
-    Download member yearly financial summary as PDF.
-    Uses Cloudinary logo: https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png
-    """
-
-    def get(self, request, member_no):
-        year = int(request.query_params.get("year", datetime.now().year))
-
-        try:
-            member = User.objects.get(member_no=member_no, is_member=True)
-        except User.DoesNotExist:
-            return Response({"error": "Member not found"}, status=404)
-
-        # Reuse JSON view data
-        from .views import MemberYearlySummaryView
-
-        json_view = MemberYearlySummaryView()
-        json_view.request = request
-        data = json_view.get(request, member_no).data
-        
-        # ... (Data processing logic remains the same, I will use replace_file_content carefully to preserve it)
-
-        # Render HTML with logo
-        html_string = render_to_string(
-            "reports/yearly_summary_pdf.html",
-            {
-                "data": data,
-                "member": member,
-                "year": year,
-                "logo_url": "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png", # Hardcoded or passed from view
-                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
-                "savings_types": savings_types,
-                "venture_types": venture_types,
-                "loan_types": loan_types,
-                "table_rows": table_rows,
-                "total_active_guarantees": total_active_guarantees,
-                "chart_of_accounts": data["chart_of_accounts"]
-            },
-        )
-
-        # Generate PDF
-        try:
-             # WeasyPrint needs a base_url to resolve relative paths (like static files) if any. 
-             # For external images (Cloudinary), it should fetch them as long as internet is available.
-            pdf_bytes = generate_pdf(html_string, base_url=request.build_absolute_uri())
-        except Exception as e:
-            logger.error(f"PDF generation failed for {member_no}: {e}")
-            return Response({"error": "Failed to generate PDF"}, status=500)
-
-        # Return download
-        response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = (
-            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
-        )
-        return response
 
 
 from savings.models import SavingsType
@@ -536,7 +465,7 @@ class MemberYearlySummaryView(APIView):
             prior_savings = (
                 SavingsDeposit.objects.filter(
                     savings_account__member=member,
-                    created_at__year=prior_year,
+                    created_at__year__lt=year,
                 )
                 .values("savings_account__account_type__name")
                 .annotate(total=Sum("amount"))
@@ -550,7 +479,7 @@ class MemberYearlySummaryView(APIView):
             prior_vent_deps = (
                 VentureDeposit.objects.filter(
                     venture_account__member=member,
-                    created_at__year=prior_year,
+                    created_at__year__lt=year,
                 )
                 .values("venture_account__venture_type__name")
                 .annotate(total=Sum("amount"))
@@ -558,7 +487,7 @@ class MemberYearlySummaryView(APIView):
             prior_vent_pays = (
                 VenturePayment.objects.filter(
                     venture_account__member=member,
-                    created_at__year=prior_year,
+                    created_at__year__lt=year,
                 )
                 .values("venture_account__venture_type__name")
                 .annotate(total=Sum("amount"))
@@ -572,7 +501,7 @@ class MemberYearlySummaryView(APIView):
             prior_disb = (
                 LoanDisbursement.objects.filter(
                     loan_account__member=member,
-                    created_at__year=prior_year,
+                    created_at__year__lt=year,
                     transaction_status="Completed",
                 )
                 .values("loan_account__loan_type__name")
@@ -581,7 +510,7 @@ class MemberYearlySummaryView(APIView):
             prior_rep = (
                 LoanRepayment.objects.filter(
                     loan_account__member=member,
-                    created_at__year=prior_year,
+                    created_at__year__lt=year,
                     transaction_status="Completed",
                     repayment_type__in=[
                         "Regular Repayment", "Early Settlement", "Partial Payment", "Individual Settlement"
@@ -983,36 +912,20 @@ class MemberYearlySummaryView(APIView):
             status=status.HTTP_200_OK,
         )
 
-# =====================================================================
-# PDF GENERATION
-# =====================================================================
-
-
-# =====================================================================
-# PDF GENERATION
-# =====================================================================
-
-
 # ------------------------------------------------------------------
 # Async PDF Generator (Playwright)
 # ------------------------------------------------------------------
-async def generate_pdf(html_content: str, logo_url: str):
+async def generate_pdf_async(html_content: str, logo_url: str):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-
-        # Inject logo URL into page context
         await page.add_init_script(f"window.LOGO_URL = '{logo_url}';")
-
-        # Set full HTML
         await page.set_content(html_content, wait_until="networkidle")
-
-        # Generate PDF with header/footer
         pdf_bytes = await page.pdf(
             format="A4",
+            landscape=True,
             print_background=True,
-            margin={"top": "1.2cm", "bottom": "1.2cm", "left": "1cm", "right": "1cm"},
-            display_header_footer=False,
+            margin={"top": "1cm", "bottom": "1cm", "left": "1cm", "right": "1cm"},
         )
         await browser.close()
         return pdf_bytes
@@ -1020,126 +933,22 @@ async def generate_pdf(html_content: str, logo_url: str):
 
 class MemberYearlySummaryPDFView(APIView):
     """
-    Download member yearly financial summary as PDF.
-    Uses Cloudinary logo: https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png
+    Download member yearly financial summary as PDF using Playwright.
     """
-
     def get(self, request, member_no):
         year = int(request.query_params.get("year", datetime.now().year))
-
-        try:
-            member = User.objects.get(member_no=member_no, is_member=True)
-        except User.DoesNotExist:
-            return Response({"error": "Member not found"}, status=404)
+        member = get_object_or_404(User, member_no=member_no, is_member=True)
 
         # Reuse JSON view data
-        from .views import MemberYearlySummaryView
-
         json_view = MemberYearlySummaryView()
         json_view.request = request
         data = json_view.get(request, member_no).data
 
-        # Cloudinary logo URL
-        logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
+        # Prep Types & Rows
+        savings_types = sorted(list({s["type"] for m in data["monthly_summary"] for s in m["savings"]["by_type"]}))
+        venture_types = sorted(list({v["venture_type"] for m in data["monthly_summary"] for v in m["ventures"]["by_type"]}))
+        loan_types = sorted(list({l["loan_type"] for m in data["monthly_summary"] for l in m["loans"]["by_type"]}))
 
-        # === PREPARE TABLE DATA ===
-        # 1. Extract unique types (sorted)
-        savings_types = sorted(list({k for m in data["monthly_summary"] for k in m["savings"].keys()}))
-        venture_types = sorted(list({k for m in data["monthly_summary"] for k in m["ventures"]["deposits"].keys()}))
-        loan_types = sorted(list({k for m in data["monthly_summary"] for k in m["loans"]["disbursed"].keys()}))
-
-
-        # 2. Build rows for template
-        # The template expects: month_name, savings_cols, venture_cols, loan_cols
-        # ensuring alignment with the headers
-        table_rows = []
-        months = [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ]
-
-        for i, month_name in enumerate(months):
-            m_data = data["monthly_summary"][i]
-
-            # Savings vals
-            s_vals = [m_data["savings"].get(t, 0) for t in savings_types]
-            
-            # Venture vals (Deposits only for now? Or net? The summary usually shows deposits)
-            # The JSON structure has 'deposits' and 'payments' under ventures.
-            # Let's show deposits in the main columns as per typical requirement, or net?
-            # Re-reading previous code, it seemed to list venture types. 
-            # Let's assume deposits for the breakdown columns.
-            v_vals = [m_data["ventures"]["deposits"].get(t, 0) for t in venture_types]
-
-            # Loan vals (Repaid? Disbursed? Outstanding?)
-            # Usually summaries show Repayments or Outstanding. 
-            # The JSON has 'disbursed', 'repaid', 'interest', 'outstanding'.
-            # Let's show 'repaid' as it fits "Activity".
-            # Or maybe we need multiple columns per loan type?
-            # For simplicity and space, let's show 'repaid' for each loan type in the breakdown.
-            l_vals = [m_data["loans"]["repaid"].get(t, 0) for t in loan_types]
-
-            row = {
-                "month": month_name,
-                "savings_cols": s_vals,
-                "venture_cols": v_vals,
-                "loan_cols": l_vals,
-            }
-            table_rows.append(row)
-        
-        # Calculate active guarantees total
-        total_active_guarantees = data["summary"]["total_guaranteed_active"]
-
-        # Render HTML
-        html_string = render_to_string(
-            "reports/yearly_summary_pdf.html",
-            {
-                "data": data,
-                "member": member,
-                "year": year,
-                "logo_url": logo_url,
-                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
-                "savings_types": savings_types,
-                "venture_types": venture_types,
-                "loan_types": loan_types,
-                "table_rows": table_rows,
-                "total_active_guarantees": total_active_guarantees,
-                "chart_of_accounts": data["chart_of_accounts"]
-            },
-        )
-
-        # Generate PDF
-        try:
-            pdf_bytes = asyncio.run(generate_pdf(html_string, logo_url))
-        except Exception as e:
-            logger.error(f"PDF generation failed for {member_no}: {e}")
-            return Response({"error": "Failed to generate PDF"}, status=500)
-
-        # Return download
-        response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = (
-            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
-        )
-        return response
-        venture_types = set()
-        loan_types = set()
-
-        for m in data["monthly_summary"]:
-            for s in m["savings"]["by_type"]:
-                savings_types.add(s["type"])
-            for v in m["ventures"]["by_type"]:
-                venture_types.add(v["venture_type"])
-            for l in m["loans"]["by_type"]:
-                loan_types.add(l["loan_type"])
-
-        savings_types = sorted(list(savings_types))
-        venture_types = sorted(list(venture_types))
-        loan_types = sorted(list(loan_types))
-
-        # Total Active Guarantees
-        total_active_guarantees = data["summary"].get("total_guaranteed_active", 0)
-
-        # 2. Build rows
         table_rows = []
         for m in data["monthly_summary"]:
             row = {
@@ -1147,48 +956,38 @@ class MemberYearlySummaryPDFView(APIView):
                 "savings": [],
                 "ventures": [],
                 "loans": [],
-                "guarantees": m.get("guarantees", {}).get("new_guarantees", 0)
+                "total_guarantees": m["guarantees"]["new_guarantees"]
             }
-
-            # Savings
+            # Savings mapping
             s_map = {item["type"]: item for item in m["savings"]["by_type"]}
             for t in savings_types:
                 item = s_map.get(t)
                 row["savings"].append({
-                    "type": t,
                     "dep": item["amount"] if item else 0,
-                    "bal": item["balance_carried_forward"] if item else 0,
-                    "exists": bool(item)
+                    "bal": item["balance_carried_forward"] if item else 0
                 })
-
-            # Ventures
+            # Ventures mapping
             v_map = {item["venture_type"]: item for item in m["ventures"]["by_type"]}
             for t in venture_types:
                 item = v_map.get(t)
                 row["ventures"].append({
-                    "type": t,
                     "dep": item["total_venture_deposits"] if item else 0,
                     "pay": item["total_venture_payments"] if item else 0,
-                    "bal": item["balance_carried_forward"] if item else 0,
-                    "exists": bool(item)
+                    "bal": item["balance_carried_forward"] if item else 0
                 })
-
-            # Loans
+            # Loans mapping
             l_map = {item["loan_type"]: item for item in m["loans"]["by_type"]}
             for t in loan_types:
                 item = l_map.get(t)
                 row["loans"].append({
-                    "type": t,
                     "disb": item["total_amount_disbursed"] if item else 0,
                     "rep": item["total_amount_repaid"] if item else 0,
                     "int": item["total_interest_charged"] if item else 0,
-                    "out": item["total_amount_outstanding"] if item else 0,
-                    "exists": bool(item)
+                    "out": item["total_amount_outstanding"] if item else 0
                 })
-
             table_rows.append(row)
 
-        # Render HTML with logo
+        logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
         html_string = render_to_string(
             "reports/yearly_summary_pdf.html",
             {
@@ -1201,21 +1000,18 @@ class MemberYearlySummaryPDFView(APIView):
                 "venture_types": venture_types,
                 "loan_types": loan_types,
                 "table_rows": table_rows,
-                "total_active_guarantees": total_active_guarantees,
+                "total_active_guarantees": data["summary"]["total_guaranteed_active"],
                 "chart_of_accounts": data["chart_of_accounts"]
             },
         )
 
-        # Generate PDF
         try:
-            pdf_bytes = generate_pdf(html_string, base_url=request.build_absolute_uri())
+            pdf_bytes = asyncio.run(generate_pdf_async(html_string, logo_url))
         except Exception as e:
             logger.error(f"PDF generation failed for {member_no}: {e}")
             return Response({"error": "Failed to generate PDF"}, status=500)
 
-        # Return download
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = (
-            f'attachment; filename="{member_no}_Summary_{year}.pdf"'
-        )
+        response["Content-Disposition"] = f'attachment; filename="{member_no}_Summary_{year}.pdf"'
         return response
+
