@@ -3,11 +3,11 @@
 
     <head>
         <meta charset="utf-8">
-        <title>SACCO Financial Summary - {{ end_date }}</title>
+        <title>SACCO Detailed Summary - {{ year }}</title>
         <style>
             @page {
-                size: A4 portrait;
-                margin: 1.5cm;
+                size: A4 landscape;
+                margin: 1cm;
 
                 @bottom-right {
                     content: "Page " counter(page) " of " counter(pages);
@@ -19,217 +19,289 @@
             body {
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
                 color: #1e293b;
-                line-height: 1.5;
-                font-size: 10pt;
+                line-height: 1.4;
+                font-size: 8pt;
                 margin: 0;
+                padding: 0;
             }
 
-            .header {
-                text-align: center;
+            .header-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
                 border-bottom: 2px solid #1e40af;
-                padding-bottom: 15px;
-                margin-bottom: 30px;
+                padding-bottom: 10px;
+                margin-bottom: 20px;
             }
 
-            .header h1 {
-                margin: 0;
-                font-size: 22pt;
+            .header-left h1 {
                 color: #1e40af;
+                font-size: 18pt;
+                margin: 0;
                 text-transform: uppercase;
             }
 
-            .header p {
-                margin: 5px 0 0;
-                font-size: 12pt;
+            .header-left p {
+                margin: 2px 0;
                 color: #64748b;
+                font-size: 10pt;
             }
 
+            .logo {
+                height: 60px;
+            }
+
+            /* Yearly Summary Cards */
             .summary-grid {
                 display: table;
                 width: 100%;
-                margin-bottom: 40px;
-                border-spacing: 15px 0;
+                border-spacing: 10px 0;
+                margin-bottom: 20px;
             }
 
             .summary-card {
                 display: table-cell;
                 background: #f8fafc;
                 border: 1px solid #e2e8f0;
-                border-radius: 8px;
-                padding: 15px;
+                border-radius: 6px;
+                padding: 10px;
                 text-align: center;
+                width: 12.5%;
             }
 
             .card-label {
-                font-size: 8pt;
+                font-size: 7pt;
                 color: #64748b;
                 text-transform: uppercase;
                 font-weight: 700;
             }
 
             .card-value {
-                font-size: 16pt;
+                font-size: 11pt;
                 font-weight: 800;
                 color: #0f172a;
-                margin-top: 5px;
+                margin-top: 4px;
             }
 
-            .profit-pos {
-                color: #059669;
-            }
-
-            .profit-neg {
-                color: #dc2626;
-            }
-
-            .section-title {
-                background: #f1f5f9;
-                padding: 8px 12px;
-                font-size: 11pt;
-                font-weight: 700;
-                color: #334155;
-                border-left: 4px solid #1e40af;
-                margin: 25px 0 10px;
-            }
-
+            /* Tables Style */
             table {
                 width: 100%;
                 border-collapse: collapse;
-                margin-bottom: 20px;
+                margin-bottom: 15px;
+                table-layout: fixed;
             }
 
             th,
             td {
-                border-bottom: 1px solid #e2e8f0;
-                padding: 10px 12px;
-                text-align: left;
+                border: 1px solid #e2e8f0;
+                padding: 4px 6px;
+                text-align: right;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
             }
 
             th {
-                font-size: 8pt;
+                background: #f1f5f9;
+                font-weight: 700;
+                color: #334155;
+                text-align: center;
+                font-size: 7.5pt;
+            }
+
+            .month-col {
+                text-align: left;
+                width: 80px;
+                background: #f8fafc;
+                font-weight: 600;
+            }
+
+            .section-header {
+                background: #1e40af;
+                color: white;
+                text-align: center;
+                font-weight: 800;
                 text-transform: uppercase;
-                color: #64748b;
-                font-weight: 600;
+                font-size: 9pt;
+                padding: 6px;
             }
 
-            .amount-col {
-                text-align: right;
-                font-family: 'Courier New', Courier, monospace;
-                font-weight: 600;
-            }
-
-            .subtotal-row {
-                background: #fdfdfd;
+            .sub-header {
+                background: #e0e7ff;
+                color: #1e40af;
+                text-align: center;
                 font-weight: 700;
             }
 
+            .total-row {
+                background: #f8fafc;
+                font-weight: 800;
+            }
+
+            .amount {
+                color: #0f172a;
+            }
+
+            .negative {
+                color: #dc2626;
+            }
+
             .footer {
-                margin-top: 50px;
-                text-align: center;
-                font-size: 8pt;
-                color: #94a3b8;
+                margin-top: 20px;
                 border-top: 1px solid #e2e8f0;
-                padding-top: 15px;
+                padding-top: 10px;
+                text-align: center;
+                font-size: 7pt;
+                color: #94a3b8;
             }
         </style>
     </head>
 
     <body>
 
-        <div class="header">
-            <h1>SACCO Financial Summary</h1>
-            <p>Consolidated Position as of {{ end_date }}</p>
+        <div class="header-container">
+            <div class="header-left">
+                <h1>TAMARIND SACCO - Detailed Annual Summary</h1>
+                <p>Consolidated Statement for the Year {{ year }}</p>
+            </div>
+            <img src="{{ logo_url }}" class="logo" alt="Logo">
         </div>
 
+        <!-- Yearly Performance Overview -->
         <div class="summary-grid">
             <div class="summary-card">
-                <div class="card-label">Total Assets</div>
-                <div class="card-value">Ksh {{ totals.assets|floatformat:2 }}</div>
+                <div class="card-label">Savings Deposits</div>
+                <div class="card-value">{{ data.summary.total_savings|floatformat:0 }}</div>
             </div>
             <div class="summary-card">
-                <div class="card-label">Total Liabilities</div>
-                <div class="card-value">Ksh {{ totals.liabilities|floatformat:2 }}</div>
+                <div class="card-label">Loan Disbursed</div>
+                <div class="card-value">{{ data.summary.total_loans_disbursed|floatformat:0 }}</div>
             </div>
             <div class="summary-card">
-                <div class="card-label">Net Surplus/Deficit</div>
-                <div class="card-value {% if net_profit >= 0 %}profit-pos{% else %}profit-neg{% endif %}">
-                    Ksh {{ net_profit|floatformat:2 }}
+                <div class="card-label">Loan Repaid</div>
+                <div class="card-value">{{ data.summary.total_loans_repaid|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Interest Earned</div>
+                <div class="card-value">{{ data.summary.total_interest_charged|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Net Ventures</div>
+                <div class="card-value">{{ data.summary.total_ventures_net|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">New Guarantees</div>
+                <div class="card-value">{{ data.summary.total_new_guarantees|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card" style="background:#eff6ff; border:1px solid #1e40af">
+                <div class="card-label" style="color:#1e40af">Outstanding Loans</div>
+                <div class="card-value" style="color:#1e40af">{{ data.summary.total_loans_outstanding|floatformat:0 }}
                 </div>
             </div>
         </div>
 
-        <!-- Assets -->
-        <div class="section-title">I. ASSETS</div>
+        <!-- Detailed Monthly Matrix -->
         <table>
             <thead>
-                <tr>
-                    <th>Code</th>
-                    <th>Account Name</th>
-                    <th class="amount-col">Balance (Ksh)</th>
+                <tr class="section-header">
+                    <th colspan="1">Period</th>
+                    <th colspan="{{ savings_types|length|add:savings_types|length }}">I. SACCO SAVINGS PORTFOLIO</th>
+                    <th colspan="{{ venture_types|length|add:venture_types|length|add:venture_types|length }}">II. SACCO
+                        VENTURES PORTFOLIO</th>
+                    <th colspan="1">III. GUARANTEES</th>
+                </tr>
+                <tr class="sub-header">
+                    <th>Month</th>
+                    {% for t in savings_types %}
+                    <th colspan="2">{{ t }}</th>
+                    {% endfor %}
+                    {% for t in venture_types %}
+                    <th colspan="3">{{ t }}</th>
+                    {% endfor %}
+                    <th>New</th>
+                </tr>
+                <tr class="sub-header" style="background: #f8fafc">
+                    <th></th>
+                    {% for t in savings_types %}
+                    <th>In</th>
+                    <th>Bal</th>
+                    {% endfor %}
+                    {% for t in venture_types %}
+                    <th>In</th>
+                    <th>Out</th>
+                    <th>Bal</th>
+                    {% endfor %}
+                    <th>Requests</th>
                 </tr>
             </thead>
             <tbody>
-                {% for acc in assets %}
+                {% for row in table_rows %}
                 <tr>
-                    <td>{{ acc.code }}</td>
-                    <td>{{ acc.name }}</td>
-                    <td class="amount-col">{{ acc.balance|floatformat:2 }}</td>
+                    <td class="month-col">{{ row.month }}</td>
+                    <!-- Savings -->
+                    {% for s in row.savings %}
+                    <td>{{ s.dep|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9">{{ s.bal|floatformat:0 }}</td>
+                    {% endfor %}
+                    <!-- Ventures -->
+                    {% for v in row.ventures %}
+                    <td>{{ v.dep|floatformat:0 }}</td>
+                    <td>{{ v.pay|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9">{{ v.bal|floatformat:0 }}</td>
+                    {% endfor %}
+                    <!-- Guarantees -->
+                    <td>{{ row.total_guarantees|floatformat:0 }}</td>
                 </tr>
                 {% endfor %}
-                <tr class="subtotal-row">
-                    <td colspan="2">TOTAL ASSETS</td>
-                    <td class="amount-col">{{ totals.assets|floatformat:2 }}</td>
-                </tr>
             </tbody>
         </table>
 
-        <!-- Liabilities -->
-        <div class="section-title">II. LIABILITIES</div>
+        <!-- Loan Portfolio Table -->
+        <div style="page-break-before: always;"></div>
+
+        <div class="header-container">
+            <div class="header-left">
+                <h1>SACCO LOAN PORTFOLIO MANAGEMENT</h1>
+                <p>Monthly Repayment and Outstanding Positions - {{ year }}</p>
+            </div>
+        </div>
+
         <table>
             <thead>
-                <tr>
-                    <th>Code</th>
-                    <th>Account Name</th>
-                    <th class="amount-col">Balance (Ksh)</th>
+                <tr class="section-header">
+                    <th colspan="1">Period</th>
+                    {% for t in loan_types %}
+                    <th colspan="4">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header">
+                    <th>Month</th>
+                    {% for t in loan_types %}
+                    <th>Disb</th>
+                    <th>Rep</th>
+                    <th>Int</th>
+                    <th>Out</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody>
-                {% for acc in liabilities %}
+                {% for row in table_rows %}
                 <tr>
-                    <td>{{ acc.code }}</td>
-                    <td>{{ acc.name }}</td>
-                    <td class="amount-col">{{ acc.balance|floatformat:2 }}</td>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for l in row.loans %}
+                    <td>{{ l.disb|floatformat:0 }}</td>
+                    <td>{{ l.rep|floatformat:0 }}</td>
+                    <td>{{ l.int|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9; font-weight:700">{{ l.out|floatformat:0 }}</td>
+                    {% endfor %}
                 </tr>
                 {% endfor %}
-                <tr class="subtotal-row">
-                    <td colspan="2">TOTAL LIABILITIES</td>
-                    <td class="amount-col">{{ totals.liabilities|floatformat:2 }}</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <!-- Performance -->
-        <div class="section-title">III. INCOME & EXPENDITURE SUMMARY</div>
-        <table>
-            <tbody>
-                <tr>
-                    <td>Total Revenue (Interest & Fees)</td>
-                    <td class="amount-col">{{ totals.revenue|floatformat:2 }}</td>
-                </tr>
-                <tr>
-                    <td>Total Operating Expenses</td>
-                    <td class="amount-col">({{ totals.expenses|floatformat:2 }})</td>
-                </tr>
-                <tr class="subtotal-row">
-                    <td>NET SURPLUS FOR THE PERIOD</td>
-                    <td class="amount-col">{{ net_profit|floatformat:2 }}</td>
-                </tr>
             </tbody>
         </table>
 
         <div class="footer">
-            <p>&copy; {{ current_year }} Tamarind SACCO. This is an official management report generated on {{
-                generated_at }}.</p>
+            <p>This is a consolidated management report generated on {{ generated_at }}. Tamarind SACCO Financial
+                Systems.</p>
         </div>
 
     </body>

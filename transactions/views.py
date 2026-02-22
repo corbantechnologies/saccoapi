@@ -18,8 +18,10 @@ from django.contrib.auth import get_user_model
 from django.http import StreamingHttpResponse
 from datetime import datetime
 from collections import defaultdict
-from django.db.models import Sum
+from django.db.models import Sum, Q
+from django.db.models.functions import TruncMonth
 from rest_framework.views import APIView
+from finances.models import GLAccount, JournalEntry
 
 
 # ... (imports remain the same)
@@ -915,7 +917,7 @@ class MemberYearlySummaryView(APIView):
 # ------------------------------------------------------------------
 # Async PDF Generator (Playwright)
 # ------------------------------------------------------------------
-async def generate_pdf_async(html_content: str, logo_url: str):
+async def generate_pdf_async(html_content: str, logo_url: str, landscape: bool = True):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
@@ -923,7 +925,7 @@ async def generate_pdf_async(html_content: str, logo_url: str):
         await page.set_content(html_content, wait_until="networkidle")
         pdf_bytes = await page.pdf(
             format="A4",
-            landscape=True,
+            landscape=landscape,
             print_background=True,
             margin={"top": "1cm", "bottom": "1cm", "left": "1cm", "right": "1cm"},
         )
@@ -1006,7 +1008,7 @@ class MemberYearlySummaryPDFView(APIView):
         )
 
         try:
-            pdf_bytes = asyncio.run(generate_pdf_async(html_string, logo_url))
+            pdf_bytes = asyncio.run(generate_pdf_async(html_string, logo_url, landscape=True))
         except Exception as e:
             logger.error(f"PDF generation failed for {member_no}: {e}")
             return Response({"error": "Failed to generate PDF"}, status=500)
@@ -1014,4 +1016,403 @@ class MemberYearlySummaryPDFView(APIView):
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="{member_no}_Summary_{year}.pdf"'
         return response
+
+
+# =================================================================================================
+# SACCO FINANCIAL REPORTING
+# =================================================================================================
+
+class SACCOSummaryView(APIView):
+    """
+    Detailed annual financial summary for the entire SACCO.
+    Matches the depth of the Member summary but aggregated SACCO-wide.
+    """
+    def get(self, request):
+        year = int(request.query_params.get("year", datetime.now().year))
+        
+        # === PRELOAD ALL TYPES ===
+        all_savings_types = {t.name: t for t in SavingsType.objects.all()}
+        all_venture_types = {t.name: t for t in VentureType.objects.all()}
+        all_loan_types = {t.name: t for t in LoanType.objects.all()}
+
+        # === 1. FETCH PRIOR YEAR ENDING BALANCES (for B/F in January) ===
+        prior_year = year - 1
+        prior_balances = {
+            "savings": {name: Decimal("0") for name in all_savings_types.keys()},
+            "venture_net": {name: Decimal("0") for name in all_venture_types.keys()},
+            "loan_out": {name: Decimal("0") for name in all_loan_types.keys()},
+        }
+
+        if prior_year >= 2020:
+            # --- SAVINGS ---
+            prior_savings = (
+                SavingsDeposit.objects.filter(created_at__year__lt=year)
+                .values("savings_account__account_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            for item in prior_savings:
+                name = item["savings_account__account_type__name"]
+                if name in prior_balances["savings"]:
+                    prior_balances["savings"][name] = Decimal(str(item["total"]))
+
+            # --- VENTURES ---
+            prior_vent_deps = (
+                VentureDeposit.objects.filter(created_at__year__lt=year)
+                .values("venture_account__venture_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            prior_vent_pays = (
+                VenturePayment.objects.filter(created_at__year__lt=year)
+                .values("venture_account__venture_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            dep_map = {x["venture_account__venture_type__name"]: Decimal(str(x["total"])) for x in prior_vent_deps}
+            pay_map = {x["venture_account__venture_type__name"]: Decimal(str(x["total"])) for x in prior_vent_pays}
+            for name in all_venture_types.keys():
+                prior_balances["venture_net"][name] = dep_map.get(name, Decimal("0")) - pay_map.get(name, Decimal("0"))
+
+            # --- LOANS ---
+            prior_disb = (
+                LoanDisbursement.objects.filter(created_at__year__lt=year, transaction_status="Completed")
+                .values("loan_account__loan_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            prior_rep = (
+                LoanRepayment.objects.filter(
+                    created_at__year__lt=year,
+                    transaction_status="Completed",
+                    repayment_type__in=["Regular Repayment", "Early Settlement", "Partial Payment", "Individual Settlement"]
+                )
+                .values("loan_account__loan_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            disb_map = {x["loan_account__loan_type__name"]: Decimal(str(x["total"])) for x in prior_disb}
+            rep_map = {x["loan_account__loan_type__name"]: Decimal(str(x["total"])) for x in prior_rep}
+            for name in all_loan_types.keys():
+                disb = disb_map.get(name, Decimal("0"))
+                rep = rep_map.get(name, Decimal("0"))
+                prior_balances["loan_out"][name] = max(disb - rep, Decimal("0"))
+
+        # === 2. INITIALIZE RUNNING BALANCES WITH PRIOR YEAR ===
+        running = {
+            "savings": prior_balances["savings"].copy(),
+            "venture_net": prior_balances["venture_net"].copy(),
+            "loan_out": prior_balances["loan_out"].copy(),
+        }
+
+        # === YEARLY ACCUMULATORS ===
+        yearly = {
+            "savings": defaultdict(Decimal),
+            "vent_dep": defaultdict(Decimal),
+            "vent_pay": defaultdict(Decimal),
+            "loan_disb": defaultdict(Decimal),
+            "loan_rep": defaultdict(Decimal),
+            "loan_int": defaultdict(Decimal),
+            "guarantees": defaultdict(Decimal),
+        }
+
+        # === FETCH TOTAL GUARANTEES ===
+        try:
+            total_active_guarantees = GuarantorProfile.objects.aggregate(total=Sum('committed_guarantee_amount'))['total'] or Decimal('0')
+        except:
+            total_active_guarantees = Decimal("0")
+
+        # Helper to group by month
+        def get_monthly_summary_data(queryset, date_field="created_at"):
+            return (
+                queryset
+                .filter(created_at__year=year)
+                .annotate(month=TruncMonth(date_field))
+                .values("month")
+                .annotate(total=Sum("amount"))
+                .order_by("month")
+            )
+
+        # 1. Savings
+        savings_qs = SavingsDeposit.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "savings_account__account_type__name").annotate(total=Sum("amount"))
+        savings_by_month = defaultdict(lambda: defaultdict(Decimal))
+        for item in savings_qs:
+            savings_by_month[item["month"].month][item["savings_account__account_type__name"]] = Decimal(str(item["total"]))
+
+        # 2. Ventures
+        vent_dep_qs = VentureDeposit.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "venture_account__venture_type__name").annotate(total=Sum("amount"))
+        vent_pay_qs = VenturePayment.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "venture_account__venture_type__name").annotate(total=Sum("amount"))
+        
+        vent_dep_by_month = defaultdict(lambda: defaultdict(Decimal))
+        for item in vent_dep_qs:
+            vent_dep_by_month[item["month"].month][item["venture_account__venture_type__name"]] = Decimal(str(item["total"]))
+        
+        vent_pay_by_month = defaultdict(lambda: defaultdict(Decimal))
+        for item in vent_pay_qs:
+            vent_pay_by_month[item["month"].month][item["venture_account__venture_type__name"]] = Decimal(str(item["total"]))
+
+        # 3. Loans
+        loan_disb_qs = LoanDisbursement.objects.filter(created_at__year=year, transaction_status="Completed").annotate(month=TruncMonth("created_at")).values("month", "loan_account__loan_type__name").annotate(total=Sum("amount"))
+        loan_rep_qs = LoanRepayment.objects.filter(created_at__year=year, transaction_status="Completed").annotate(month=TruncMonth("created_at")).values("month", "loan_account__loan_type__name").annotate(total=Sum("amount"))
+        loan_int_qs = TamarindLoanInterest.objects.filter(created_at__year=year).annotate(month=TruncMonth("created_at")).values("month", "loan_account__loan_type__name").annotate(total=Sum("amount"))
+
+        loan_disb_by_month = defaultdict(lambda: defaultdict(Decimal))
+        for item in loan_disb_qs:
+            loan_disb_by_month[item["month"].month][item["loan_account__loan_type__name"]] = Decimal(str(item["total"]))
+
+        loan_rep_by_month = defaultdict(lambda: defaultdict(Decimal))
+        for item in loan_rep_qs:
+            loan_rep_by_month[item["month"].month][item["loan_account__loan_type__name"]] = Decimal(str(item["total"]))
+            
+        loan_int_by_month = defaultdict(lambda: defaultdict(Decimal))
+        for item in loan_int_qs:
+            loan_int_by_month[item["month"].month][item["loan_account__loan_type__name"]] = Decimal(str(item["total"]))
+
+        # 4. Guarantees
+        new_guarantees_qs = GuaranteeRequest.objects.filter(status="Accepted", created_at__year=year).annotate(month=TruncMonth("created_at")).values("month").annotate(total=Sum("guaranteed_amount"))
+        guarantees_by_month = defaultdict(Decimal)
+        for item in new_guarantees_qs:
+            guarantees_by_month[item["month"].month] = Decimal(str(item["total"]))
+
+        monthly_summary = []
+
+        # === 3. LOOP THROUGH EACH MONTH ===
+        for month in range(1, 13):
+            month_name = calendar.month_name[month]
+            month_key = f"{month_name} {year}"
+
+            # Savings
+            m_savings = savings_by_month[month]
+            enhanced_savings = []
+            total_savings_month = Decimal("0")
+            for name in all_savings_types.keys():
+                amt = m_savings.get(name, Decimal("0"))
+                brought = running["savings"][name]
+                running["savings"][name] += amt
+                total_savings_month += amt
+                yearly["savings"][name] += amt
+                enhanced_savings.append({
+                    "type": name,
+                    "amount": float(amt),
+                    "total_deposits": float(amt),
+                    "balance_brought_forward": float(brought),
+                    "balance_carried_forward": float(running["savings"][name]),
+                })
+
+            # Ventures
+            m_vent_dep = vent_dep_by_month[month]
+            m_vent_pay = vent_pay_by_month[month]
+            enhanced_ventures = []
+            total_vent_dep_m = Decimal("0")
+            total_vent_pay_m = Decimal("0")
+            for name in all_venture_types.keys():
+                d_amt = m_vent_dep.get(name, Decimal("0"))
+                p_amt = m_vent_pay.get(name, Decimal("0"))
+                brought = running["venture_net"][name]
+                running["venture_net"][name] += (d_amt - p_amt)
+                total_vent_dep_m += d_amt
+                total_vent_pay_m += p_amt
+                yearly["vent_dep"][name] += d_amt
+                yearly["vent_pay"][name] += p_amt
+                enhanced_ventures.append({
+                    "venture_type": name,
+                    "total_venture_deposits": float(d_amt),
+                    "total_venture_payments": float(p_amt),
+                    "balance_brought_forward": float(brought),
+                    "balance_carried_forward": float(running["venture_net"][name]),
+                })
+
+            # Loans
+            m_loan_disb = loan_disb_by_month[month]
+            m_loan_rep = loan_rep_by_month[month]
+            m_loan_int = loan_int_by_month[month]
+            enhanced_loans = []
+            total_loan_disb_m = Decimal("0")
+            total_loan_rep_m = Decimal("0")
+            total_loan_int_m = Decimal("0")
+            for name in all_loan_types.keys():
+                d_amt = m_loan_disb.get(name, Decimal("0"))
+                r_amt = m_loan_rep.get(name, Decimal("0"))
+                i_amt = m_loan_int.get(name, Decimal("0"))
+                brought = running["loan_out"][name]
+                running["loan_out"][name] += (d_amt - r_amt)
+                total_loan_disb_m += d_amt
+                total_loan_rep_m += r_amt
+                total_loan_int_m += i_amt
+                yearly["loan_disb"][name] += d_amt
+                yearly["loan_rep"][name] += r_amt
+                yearly["loan_int"][name] += i_amt
+                enhanced_loans.append({
+                    "loan_type": name,
+                    "total_amount_disbursed": float(d_amt),
+                    "total_amount_repaid": float(r_amt),
+                    "total_interest_charged": float(i_amt),
+                    "total_amount_outstanding": float(running["loan_out"][name]),
+                    "balance_brought_forward": float(brought),
+                    "balance_carried_forward": float(running["loan_out"][name]),
+                })
+
+            # Guarantees
+            g_amt = guarantees_by_month[month]
+            yearly["guarantees"]["new"] += g_amt
+
+            monthly_summary.append({
+                "month": month_key,
+                "savings": {
+                    "total_savings": float(total_savings_month),
+                    "total_balance": float(sum(running["savings"].values())),
+                    "by_type": enhanced_savings,
+                },
+                "ventures": {
+                    "venture_deposits": float(total_vent_dep_m),
+                    "venture_payments": float(total_vent_pay_m),
+                    "venture_balance": float(total_vent_dep_m - total_vent_pay_m),
+                    "total_balance": float(sum(running["venture_net"].values())),
+                    "by_type": enhanced_ventures,
+                },
+                "loans": {
+                    "total_loans_disbursed": float(total_loan_disb_m),
+                    "total_loans_repaid": float(total_loan_rep_m),
+                    "total_interest_charged": float(total_loan_int_m),
+                    "total_loans_outstanding": float(sum(running["loan_out"].values())),
+                    "total_balance": float(sum(running["loan_out"].values())),
+                    "by_type": enhanced_loans,
+                },
+                "guarantees": {
+                    "new_guarantees": float(g_amt),
+                    "transactions": [] # Detail not practical for SACCO-wide JSON
+                },
+            })
+
+        # === YEARLY TOTALS ===
+        total_savings = sum(yearly["savings"].values())
+        total_vent_dep = sum(yearly["vent_dep"].values())
+        total_vent_pay = sum(yearly["vent_pay"].values())
+        total_ventures_net = total_vent_dep - total_vent_pay
+        total_loan_disb = sum(yearly["loan_disb"].values())
+        total_loan_rep = sum(yearly["loan_rep"].values())
+        total_loan_int = sum(yearly["loan_int"].values())
+        total_loan_out = sum(running["loan_out"].values())
+        total_new_guarantees = yearly["guarantees"]["new"]
+
+        # Final Response
+        return Response({
+            "year": year,
+            "summary": {
+                "total_savings": float(total_savings),
+                "total_venture_deposits": float(total_vent_dep),
+                "total_venture_payments": float(total_vent_pay),
+                "total_ventures_net": float(total_ventures_net),
+                "total_loans_disbursed": float(total_loan_disb),
+                "total_loans_repaid": float(total_loan_rep),
+                "total_interest_charged": float(total_loan_int),
+                "total_loans_outstanding": float(total_loan_out),
+                "total_guaranteed_active": float(total_active_guarantees),
+                "total_new_guarantees": float(total_new_guarantees),
+            },
+            "monthly_summary": monthly_summary
+        }, status=status.HTTP_200_OK)
+
+
+class SACCOSummaryPDFView(APIView):
+    """
+    Download consolidated SACCO summary as PDF.
+    """
+    def get(self, request):
+        year = int(request.query_params.get("year", datetime.now().year))
+        
+        # 1. Reuse logic from SACCOSummaryView
+        summary_view = SACCOSummaryView()
+        summary_view.request = request
+        data = summary_view.get(request).data
+        
+        # Prep Rows for Template (Same structure as Member summary)
+        savings_types = sorted(list({s["type"] for m in data["monthly_summary"] for s in m["savings"]["by_type"]}))
+        venture_types = sorted(list({v["venture_type"] for m in data["monthly_summary"] for v in m["ventures"]["by_type"]}))
+        loan_types = sorted(list({l["loan_type"] for m in data["monthly_summary"] for l in m["loans"]["by_type"]}))
+
+        table_rows = []
+        for m in data["monthly_summary"]:
+            row = {
+                "month": m["month"],
+                "savings": [],
+                "ventures": [],
+                "loans": [],
+                "total_guarantees": m["guarantees"]["new_guarantees"]
+            }
+            s_map = {item["type"]: item for item in m["savings"]["by_type"]}
+            for t in savings_types:
+                item = s_map.get(t)
+                row["savings"].append({
+                    "dep": item["amount"] if item else 0,
+                    "bal": item["balance_carried_forward"] if item else 0
+                })
+            v_map = {item["venture_type"]: item for item in m["ventures"]["by_type"]}
+            for t in venture_types:
+                item = v_map.get(t)
+                row["ventures"].append({
+                    "dep": item["total_venture_deposits"] if item else 0,
+                    "pay": item["total_venture_payments"] if item else 0,
+                    "bal": item["balance_carried_forward"] if item else 0
+                })
+            l_map = {item["loan_type"]: item for item in m["loans"]["by_type"]}
+            for t in loan_types:
+                item = l_map.get(t)
+                row["loans"].append({
+                    "disb": item["total_amount_disbursed"] if item else 0,
+                    "rep": item["total_amount_repaid"] if item else 0,
+                    "int": item["total_interest_charged"] if item else 0,
+                    "out": item["total_amount_outstanding"] if item else 0
+                })
+            table_rows.append(row)
+
+        logo_url = "https://res.cloudinary.com/dhw8kulj3/image/upload/v1762838274/logoNoBg_umwk2o.png"
+        html_string = render_to_string(
+            "reports/sacco_summary_pdf.html",
+            {
+                "data": data,
+                "year": year,
+                "logo_url": logo_url,
+                "generated_at": datetime.now().strftime("%d %B %Y, %I:%M %p"),
+                "savings_types": savings_types,
+                "venture_types": venture_types,
+                "loan_types": loan_types,
+                "table_rows": table_rows,
+                "total_active_guarantees": data["summary"]["total_guaranteed_active"],
+            }
+        )
+        
+        try:
+            # Full detail SACCO summary is better in landscape
+            pdf_bytes = asyncio.run(generate_pdf_async(html_string, logo_url, landscape=True))
+        except Exception as e:
+            logger.error(f"SACCO PDF generation failed: {e}")
+            return Response({"error": f"PDF generation failed"}, status=500)
+
+        response = HttpResponse(pdf_bytes, content_type="application/pdf")
+        filename = f"SACCO_Detailed_Summary_{year}.pdf"
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class CashbookView(APIView):
+    """
+    Chronological flow of funds (Cash/Bank account entries).
+    """
+    def get(self, request):
+        # We focus on the Cash at Bank account (Code 1010)
+        cash_acc = GLAccount.objects.get(code='1010')
+        entries = JournalEntry.objects.filter(gl_account=cash_acc).order_by('transaction_date', 'created_at')
+        
+        results = []
+        running_balance = Decimal('0')
+        
+        for entry in entries:
+            running_balance += (entry.debit - entry.credit)
+            results.append({
+                'date': entry.transaction_date,
+                'description': entry.description,
+                'debit': float(entry.debit),
+                'credit': float(entry.credit),
+                'balance': float(running_balance),
+                'reference': entry.reference_id,
+                'source': entry.source_model
+            })
+            
+        return Response(results, status=status.HTTP_200_OK)
 

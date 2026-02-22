@@ -6,9 +6,11 @@ from transactions.views import (
     AccountDetailView,
     CombinedBulkUploadView,
     MemberYearlySummaryView,
-    MemberYearlySummaryPDFView
+    MemberYearlySummaryPDFView,
+    SACCOSummaryView,
+    CashbookView,
+    SACCOSummaryPDFView
 )
-from transactions.views_sacco import SACCOSummaryView, CashbookView, SACCOSummaryPDFView
 
 app_name = "transactions"
 
@@ -29,7 +31,7 @@ urlpatterns = [
     path("<str:member_no>/summary/download/", MemberYearlySummaryPDFView.as_view(), name="summary-pdf"),
     
     # SACCO Level Reports
-    path("sacco/summary/", SACCOSummaryView.as_view(), name="sacco-summary"),
-    path("sacco/summary/download/", SACCOSummaryPDFView.as_view(), name="sacco-summary-pdf"),
+    path("sacco/reports/", SACCOSummaryView.as_view(), name="sacco-summary"),
+    path("sacco/reports/download/", SACCOSummaryPDFView.as_view(), name="sacco-summary-pdf"),
     path("sacco/cashbook/", CashbookView.as_view(), name="sacco-cashbook"),
 ]
