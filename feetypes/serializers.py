@@ -19,6 +19,7 @@ class FeeTypeSerializer(serializers.ModelSerializer):
             "name",
             "description",
             "standard_amount",
+            "is_income",
             "is_active",
             "created_at",
             "updated_at",

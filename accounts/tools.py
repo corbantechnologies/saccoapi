@@ -6,6 +6,8 @@ from venturetypes.models import VentureType
 from ventures.models import VentureAccount
 from loans.models import LoanAccount
 from loantypes.models import LoanType
+from feetypes.models import FeeType
+from memberfees.models import MemberFee
 
 
 logger = logging.getLogger(__name__)
@@ -57,4 +59,19 @@ def create_member_accounts(user):
             created_loans.append(str(account))
     logger.info(
         f"Created {len(created_loans)} LoanAccounts for {user.member_no}: {', '.join(created_loans)}"
+    )
+
+    # Fee account creation
+    fee_types = FeeType.objects.all()
+    created_fees = []
+    for fee_type in fee_types:
+        if not MemberFee.objects.filter(
+            member=user, fee_type=fee_type
+        ).exists():
+            account = MemberFee.objects.create(
+                member=user, fee_type=fee_type, amount=fee_type.standard_amount
+            )
+            created_fees.append(str(account))
+    logger.info(
+        f"Created {len(created_fees)} MemberFees for {user.member_no}: {', '.join(created_fees)}"
     )

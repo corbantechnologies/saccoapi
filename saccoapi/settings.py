@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "loanapplications",
     "feetypes",
     "memberfees",
+    "feespayments",
 ]
 
 MIDDLEWARE = [

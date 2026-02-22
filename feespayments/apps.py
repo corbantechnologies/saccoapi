@@ -1,9 +1,9 @@
 from django.apps import AppConfig
 
 
-class MemberfeesConfig(AppConfig):
+class FeespaymentsConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'memberfees'
+    name = 'feespayments'
 
     def ready(self):
-        import memberfees.signals
+        import feespayments.signals

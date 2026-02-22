@@ -30,7 +30,7 @@ class FeeTypeListCreateView(generics.ListCreateAPIView):
                 member=member, fee_type=fee_type
             ).exists():
                 account = MemberFee.objects.create(
-                    member=member, fee_type=fee_type,
+                    member=member, fee_type=fee_type, amount=fee_type.standard_amount
                 )
                 created_accounts.append(str(account))
         logger.info(

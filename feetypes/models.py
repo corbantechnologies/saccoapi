@@ -12,6 +12,7 @@ class FeeType(UniversalIdModel, TimeStampedModel, ReferenceModel):
     name = models.CharField(max_length=2550, unique=True)
     description = models.TextField(blank=True, null=True)
     standard_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+    is_income = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     class Meta:
