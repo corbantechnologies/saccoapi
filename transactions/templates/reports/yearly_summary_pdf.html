@@ -1,231 +1,330 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
     <head>
         <meta charset="utf-8">
-        <title>{{ member.member_no }} - Financial Summary {{ year }}</title>
+        <title>{{ member.member_no }} - {{ year }} Statement</title>
         <style>
             @page {
                 size: A4 landscape;
                 margin: 1cm;
 
-                @top-center {
-                    content: "Tamarind SACCO | Annual Summary";
-                    font-size: 9pt;
-                    font-weight: bold;
-                    color: #555;
-                }
-
-                @bottom-center {
+                @bottom-right {
                     content: "Page " counter(page) " of " counter(pages);
                     font-size: 8pt;
-                    color: #888;
+                    color: #64748b;
+                }
+
+                @bottom-left {
+                    content: "Generated on {{ generated_at }}";
+                    font-size: 8pt;
+                    color: #64748b;
                 }
             }
 
             body {
-                font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
-                color: #333;
-                line-height: 1.4;
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                color: #1e293b;
+                line-height: 1.5;
                 font-size: 9pt;
-            }
-
-            /* HEADER & INFO */
-            .header {
-                text-align: center;
-                margin-bottom: 20px;
-                border-bottom: 2px solid #1e40af;
-                padding-bottom: 10px;
-            }
-
-            .logo {
-                height: 50px;
-                margin-bottom: 5px;
-            }
-
-            .title {
                 margin: 0;
-                font-size: 16pt;
+                padding: 0;
+            }
+
+            /* Top Header */
+            .header-container {
+                display: table;
+                width: 100%;
+                margin-bottom: 20px;
+                border-bottom: 3px solid #1e40af;
+                padding-bottom: 15px;
+            }
+
+            .header-logo {
+                display: table-cell;
+                vertical-align: middle;
+                width: 150px;
+            }
+
+            .header-logo img {
+                max-width: 150px;
+                max-height: 60px;
+            }
+
+            .header-title {
+                display: table-cell;
+                vertical-align: middle;
+                text-align: right;
+            }
+
+            .header-title h1 {
+                margin: 0;
+                font-size: 20pt;
                 color: #1e40af;
                 text-transform: uppercase;
+                letter-spacing: -0.025em;
             }
 
-            .subtitle {
-                margin: 5px 0 0;
-                font-size: 10pt;
-                color: #555;
+            .header-title p {
+                margin: 4px 0 0;
+                font-size: 11pt;
+                color: #64748b;
+                font-weight: 500;
             }
 
-            .member-info {
-                background: #f0fdf4;
-                border: 1px solid #bbf7d0;
-                padding: 10px 15px;
-                border-radius: 6px;
-                margin-bottom: 20px;
-                display: flex;
-                justify-content: space-between;
-                font-size: 10pt;
-            }
-
-            .member-info strong {
-                color: #166534;
-            }
-
-            /* SUMMARY CARDS */
-            .summary-grid {
-                display: flex;
-                gap: 15px;
-                margin-bottom: 25px;
-                page-break-inside: avoid;
-            }
-
-            .card {
-                flex: 1;
-                background: #fff;
-                border: 1px solid #ddd;
-                border-radius: 6px;
-                padding: 12px;
-                text-align: center;
-                box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.05);
-            }
-
-            .card h3 {
-                margin: 0 0 5px;
-                font-size: 9pt;
-                color: #666;
-                text-transform: uppercase;
-            }
-
-            .card .amount {
-                font-size: 14pt;
-                font-weight: bold;
-                color: #111;
-                margin: 0;
-            }
-
-            .card.total {
+            /* Info Grid */
+            .info-section {
+                display: table;
+                width: 100%;
+                margin-bottom: 30px;
                 background: #f8fafc;
-                border-color: #cbd5e1;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 15px;
             }
 
-            .card.total .amount {
+            .info-column {
+                display: table-cell;
+                width: 33.33%;
+                padding: 0 10px;
+            }
+
+            .info-item {
+                margin-bottom: 6px;
+            }
+
+            .info-label {
+                color: #64748b;
+                font-size: 8pt;
+                text-transform: uppercase;
+                font-weight: 600;
+                display: block;
+            }
+
+            .info-value {
+                font-size: 10pt;
+                font-weight: 500;
                 color: #0f172a;
             }
 
-            /* SECTIONS */
-            .section-title {
-                font-size: 12pt;
-                color: #1e40af;
-                margin: 20px 0 10px;
-                border-bottom: 1px solid #ccc;
-                padding-bottom: 4px;
+            /* Summary Cards */
+            .summary-row {
+                display: table;
+                width: 100%;
+                margin-bottom: 30px;
+                border-spacing: 12px 0;
             }
 
-            /* TABLES */
+            .summary-card {
+                display: table-cell;
+                background: white;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 15px;
+                text-align: center;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }
+
+            .summary-card-label {
+                font-size: 8pt;
+                color: #64748b;
+                text-transform: uppercase;
+                font-weight: 700;
+                margin-bottom: 8px;
+            }
+
+            .summary-card-value {
+                font-size: 15pt;
+                font-weight: 800;
+                color: #0f172a;
+            }
+
+            .bg-blue {
+                background-color: #eff6ff;
+                border-color: #bfdbfe;
+            }
+
+            .bg-green {
+                background-color: #f0fdf4;
+                border-color: #bbf7d0;
+            }
+
+            .bg-amber {
+                background-color: #fffbeb;
+                border-color: #fde68a;
+            }
+
+            .bg-slate {
+                background-color: #f8fafc;
+                border-color: #e2e8f0;
+            }
+
+            /* Tables */
+            .section-header {
+                background: #1e40af;
+                color: white;
+                padding: 6px 12px;
+                font-size: 10pt;
+                font-weight: 700;
+                border-radius: 4px 4px 0 0;
+                margin-top: 25px;
+            }
+
             table {
                 width: 100%;
                 border-collapse: collapse;
-                font-size: 8.5pt;
+                font-size: 8pt;
                 margin-bottom: 20px;
-                page-break-inside: avoid;
             }
 
             th,
             td {
                 border: 1px solid #e2e8f0;
-                padding: 5px 8px;
+                padding: 6px 8px;
                 text-align: right;
             }
 
             th {
                 background: #f1f5f9;
-                color: #334155;
-                font-weight: 600;
+                color: #475569;
+                font-weight: 700;
+                text-transform: uppercase;
+                font-size: 7.5pt;
                 text-align: center;
-            }
-
-            .th-left {
-                text-align: left;
-            }
-
-            tr:nth-child(even) {
-                background-color: #f8fafc;
             }
 
             .month-col {
                 text-align: left;
-                font-weight: bold;
-                color: #333;
-                width: 80px;
-                background: #fdfdfd;
+                font-weight: 700;
+                color: #1e293b;
+                background: #f8fafc;
+                width: 90px;
+            }
+
+            .bal-cell {
+                font-weight: 700;
+                background: #f8fafc;
+                color: #0f172a;
             }
 
             .zero {
                 color: #cbd5e1;
             }
 
+            /* Section Specific Styles */
+            .savings-header {
+                background: #059669;
+            }
+
+            .ventures-header {
+                background: #d97706;
+            }
+
+            .loans-header {
+                background: #2563eb;
+            }
+
+            tr:nth-child(even) td:not(.bal-cell) {
+                background-color: #fafbfc;
+            }
+
+            /* Footer */
             .footer {
                 margin-top: 40px;
-                text-align: center;
-                font-size: 8pt;
-                color: #94a3b8;
+                padding-top: 15px;
                 border-top: 1px solid #e2e8f0;
-                padding-top: 10px;
+                text-align: center;
+                color: #94a3b8;
+                font-size: 7.5pt;
+            }
+
+            .legal {
+                font-style: italic;
+                margin-top: 5px;
             }
         </style>
     </head>
 
     <body>
 
-        <!-- Header -->
-        <div class="header">
-            <img src="{{ logo_url }}" alt="Logo" class="logo">
-            <h1 class="title">Member Financial Summary</h1>
-            <p class="subtitle">{{ year }} Statement</p>
-        </div>
-
-        <!-- Member Info -->
-        <div class="member-info">
-            <div><strong>Member:</strong> {{ member.member_no }} - {{ member.get_full_name }}</div>
-            <div><strong>Email:</strong> {{ member.email|default:"-" }}</div>
-            <div><strong>Phone:</strong> {{ member.phone|default:"-" }}</div>
-        </div>
-
-        <!-- Summary Cards -->
-        <div class="summary-grid">
-            <div class="card">
-                <h3>Total Savings</h3>
-                <p class="amount">{{ chart_of_accounts.total_savings|floatformat:2 }}</p>
+        <div class="header-container">
+            <div class="header-logo">
+                <img src="{{ logo_url }}" alt="Company Logo">
             </div>
-            <div class="card">
-                <h3>Net Ventures</h3>
-                <p class="amount">{{ chart_of_accounts.total_ventures|floatformat:2 }}</p>
-            </div>
-            <div class="card">
-                <h3>Loan Outstanding</h3>
-                <p class="amount">{{ chart_of_accounts.total_loans|floatformat:2 }}</p>
-            </div>
-            <div class="card total">
-                <h3>Guaranteed (Active)</h3>
-                <p class="amount">{{ total_active_guarantees|floatformat:2 }}</p>
+            <div class="header-title">
+                <h1>Annual Financial Summary</h1>
+                <p>Member Statement &bull; Calendar Year {{ year }}</p>
             </div>
         </div>
 
-        <!-- 1. SAVINGS SECTION -->
-        <h2 class="section-title">Savings Breakdown</h2>
+        <div class="info-section">
+            <div class="info-column">
+                <div class="info-item">
+                    <span class="info-label">Member Details</span>
+                    <span class="info-value">{{ member.member_no }} - {{ member.get_full_name }}</span>
+                </div>
+            </div>
+            <div class="info-column">
+                <div class="info-item">
+                    <span class="info-label">Contact Information</span>
+                    <span class="info-value">{{ member.phone|default:"N/A" }} &bull; {{ member.email|default:"N/A"
+                        }}</span>
+                </div>
+            </div>
+            <div class="info-column">
+                <div class="info-item">
+                    <span class="info-label">Statement Period</span>
+                    <span class="info-value">Jan 1, {{ year }} to Dec 31, {{ year }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="summary-row">
+            <div class="summary-card bg-green">
+                <div class="summary-card-label">Net Savings</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_savings|floatformat:2 }}</div>
+            </div>
+            <div class="summary-card bg-amber">
+                <div class="summary-card-label">Net Venture Capital</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_ventures|floatformat:2 }}</div>
+            </div>
+            <div class="summary-card bg-blue">
+                <div class="summary-card-label">Loan Outstanding</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_loans|floatformat:2 }}</div>
+            </div>
+            <div class="summary-card bg-slate">
+                <div class="summary-card-label">Total Guarantees</div>
+                <div class="summary-card-value">Ksh. {{ total_active_guarantees|floatformat:2 }}</div>
+            </div>
+            <div class="summary-card bg-slate" style="border-left: 4px solid #1e40af;">
+                <div class="summary-card-label">Fee Income</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_fee_income|floatformat:2 }}</div>
+            </div>
+            <div class="summary-card bg-slate" style="border-left: 4px solid #1e40af;">
+                <div class="summary-card-label">Member Contributions</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_member_contributions|floatformat:2 }}
+                </div>
+            </div>
+            <div class="summary-card bg-amber" style="border-left: 4px solid #dc2626;">
+                <div class="summary-card-label">Outstanding Fees</div>
+                <div class="summary-card-value">Ksh. {{ data.summary.total_fees_outstanding|floatformat:2 }}</div>
+            </div>
+        </div>
+
+        <!-- Savings Table -->
+        <div class="section-header savings-header">I. SAVINGS ACCOUNTS ACTIVITY</div>
         <table>
             <thead>
                 <tr>
-                    <th class="th-left">Month</th>
+                    <th rowspan="2" class="month-col">Month</th>
                     {% for t in savings_types %}
                     <th colspan="2">{{ t }}</th>
                     {% endfor %}
                 </tr>
                 <tr>
-                    <th></th>
                     {% for t in savings_types %}
-                    <th>Dep</th>
-                    <th>Bal</th>
+                    <th>Deposits</th>
+                    <th>Balance</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -235,31 +334,30 @@
                     <td class="month-col">{{ row.month }}</td>
                     {% for s in row.savings %}
                     <td class="{% if s.dep == 0 %}zero{% endif %}">{{ s.dep|floatformat:2 }}</td>
-                    <td class="{% if s.bal == 0 %}zero{% endif %}" style="font-weight: 500;">{{ s.bal|floatformat:2 }}
-                    </td>
+                    <td class="bal-cell {% if s.bal == 0 %}zero{% endif %}">{{ s.bal|floatformat:2 }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
 
-        <!-- 2. VENTURES SECTION -->
+        <!-- Venture Table -->
         {% if venture_types %}
-        <h2 class="section-title">Ventures Breakdown</h2>
+        <div class="section-header ventures-header" style="page-break-before: always;">II. VENTURE ACCOUNTS ACTIVITY
+        </div>
         <table>
             <thead>
                 <tr>
-                    <th class="th-left">Month</th>
+                    <th rowspan="2" class="month-col">Month</th>
                     {% for t in venture_types %}
                     <th colspan="3">{{ t }}</th>
                     {% endfor %}
                 </tr>
                 <tr>
-                    <th></th>
                     {% for t in venture_types %}
-                    <th>Dep</th>
+                    <th>Dep.</th>
                     <th>Paid</th>
-                    <th>Bal</th>
+                    <th>Balance</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -270,8 +368,7 @@
                     {% for v in row.ventures %}
                     <td class="{% if v.dep == 0 %}zero{% endif %}">{{ v.dep|floatformat:2 }}</td>
                     <td class="{% if v.pay == 0 %}zero{% endif %}">{{ v.pay|floatformat:2 }}</td>
-                    <td class="{% if v.bal == 0 %}zero{% endif %}" style="font-weight: 500;">{{ v.bal|floatformat:2 }}
-                    </td>
+                    <td class="bal-cell {% if v.bal == 0 %}zero{% endif %}">{{ v.bal|floatformat:2 }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
@@ -279,24 +376,24 @@
         </table>
         {% endif %}
 
-        <!-- 3. LOANS SECTION -->
+        <!-- Loans Table -->
         {% if loan_types %}
-        <h2 class="section-title">Loans Breakdown</h2>
+        <div class="section-header loans-header" style="page-break-before: always;">III. LOAN ACCOUNTS ACTIVITY</div>
         <table>
             <thead>
                 <tr>
-                    <th class="th-left">Month</th>
+                    <th rowspan="2" class="month-col">Month</th>
                     {% for t in loan_types %}
                     <th colspan="4">{{ t }}</th>
                     {% endfor %}
+                    <th rowspan="2">Guarantees</th>
                 </tr>
                 <tr>
-                    <th></th>
                     {% for t in loan_types %}
-                    <th>Disb</th>
-                    <th>Rep</th>
-                    <th>Int</th>
-                    <th>Out</th>
+                    <th>Disb.</th>
+                    <th>Rep.</th>
+                    <th>Int.</th>
+                    <th>Out.</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -308,8 +405,41 @@
                     <td class="{% if l.disb == 0 %}zero{% endif %}">{{ l.disb|floatformat:2 }}</td>
                     <td class="{% if l.rep == 0 %}zero{% endif %}">{{ l.rep|floatformat:2 }}</td>
                     <td class="{% if l.int == 0 %}zero{% endif %}">{{ l.int|floatformat:2 }}</td>
-                    <td class="{% if l.out == 0 %}zero{% endif %}" style="font-weight: 500;">{{ l.out|floatformat:2 }}
-                    </td>
+                    <td class="bal-cell {% if l.out == 0 %}zero{% endif %}">{{ l.out|floatformat:2 }}</td>
+                    {% endfor %}
+                    <td class="{% if row.total_guarantees == 0 %}zero{% endif %}">{{ row.total_guarantees|floatformat:2
+                        }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Fees Table -->
+        {% if fee_types %}
+        <div class="section-header" style="background: #475569; margin-top: 25px;">IV. FEES PAID ACTIVITY</div>
+        <table>
+            <thead>
+                <tr>
+                    <th rowspan="2" class="month-col">Month</th>
+                    {% for t in fee_types %}
+                    <th colspan="2">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    {% for t in fee_types %}
+                    <th>Paid</th>
+                    <th>Bal</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for f in row.fees %}
+                    <td class="{% if f.amt == 0 %}zero{% endif %}">{{ f.amt|floatformat:2 }}</td>
+                    <td class="bal-cell {% if f.bal == 0 %}zero{% endif %}">{{ f.bal|floatformat:2 }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}
@@ -317,10 +447,10 @@
         </table>
         {% endif %}
 
-        <!-- Footer -->
         <div class="footer">
-            <p>© {{ year }} Tamarind SACCO. All figures are in your local currency. This document is system generated.
-            </p>
+            <p>&copy; {{ year }} Tamarind SACCO. All figures expressed in local currency (Ksh). This is an official
+                system-generated document.</p>
+            <p class="legal">Confidential - For use by authorized member only.</p>
         </div>
 
     </body>

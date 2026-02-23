@@ -22,4 +22,8 @@ urlpatterns = [
     path("api/v1/tamarindloaninterests/", include("loanintereststamarind.urls")),
     path("api/v1/loanapplications/", include("loanapplications.urls")),
     path("api/v1/guaranteerequests/", include("guaranteerequests.urls")),
+    path("api/v1/feetypes/", include("feetypes.urls")),
+    path("api/v1/memberfees/", include("memberfees.urls")),
+    path("api/v1/feespayments/", include("feespayments.urls")),
+    path("api/v1/finances/", include("finances.urls")),
 ]

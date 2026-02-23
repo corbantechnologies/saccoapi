@@ -75,3 +75,20 @@ def release_guarantee_on_repayment(sender, instance, created, **kwargs):
                 )
                 profile.save(update_fields=["committed_guarantee_amount"])
 
+@receiver(post_save, sender=LoanRepayment)
+def post_loan_repayment_to_gl(sender, instance, created, **kwargs):
+    if instance.transaction_status != "Completed":
+        return
+
+    from finances.utils import post_to_gl
+    from finances.models import JournalEntry
+
+    # Check if already posted
+    if JournalEntry.objects.filter(reference_id=str(instance.id), source_model="LoanRepayment").exists():
+        return
+
+    if instance.repayment_type == "Interest Payment":
+        post_to_gl(instance, 'loan_repayment_interest')
+    else:
+        post_to_gl(instance, 'loan_repayment_principal')
+

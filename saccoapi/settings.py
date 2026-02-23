@@ -60,6 +60,9 @@ INSTALLED_APPS = [
     "loanintereststamarind",
     "loandisbursements",
     "loanapplications",
+    "feetypes",
+    "memberfees",
+    "feespayments",
 ]
 
 MIDDLEWARE = [

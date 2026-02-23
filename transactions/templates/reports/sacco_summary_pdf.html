@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        <meta charset="utf-8">
+        <title>SACCO Detailed Summary - {{ year }}</title>
+        <style>
+            @page {
+                size: A4 landscape;
+                margin: 1cm;
+
+                @bottom-right {
+                    content: "Page " counter(page) " of " counter(pages);
+                    font-size: 8pt;
+                    color: #64748b;
+                }
+            }
+
+            body {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                color: #1e293b;
+                line-height: 1.4;
+                font-size: 8pt;
+                margin: 0;
+                padding: 0;
+            }
+
+            .header-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 2px solid #1e40af;
+                padding-bottom: 10px;
+                margin-bottom: 20px;
+            }
+
+            .header-left h1 {
+                color: #1e40af;
+                font-size: 18pt;
+                margin: 0;
+                text-transform: uppercase;
+            }
+
+            .header-left p {
+                margin: 2px 0;
+                color: #64748b;
+                font-size: 10pt;
+            }
+
+            .logo {
+                height: 60px;
+            }
+
+            /* Yearly Summary Cards */
+            .summary-grid {
+                display: table;
+                width: 100%;
+                border-spacing: 10px 0;
+                margin-bottom: 20px;
+            }
+
+            .summary-card {
+                display: table-cell;
+                background: #f8fafc;
+                border: 1px solid #e2e8f0;
+                border-radius: 6px;
+                padding: 10px;
+                text-align: center;
+                width: 12.5%;
+            }
+
+            .card-label {
+                font-size: 7pt;
+                color: #64748b;
+                text-transform: uppercase;
+                font-weight: 700;
+            }
+
+            .card-value {
+                font-size: 11pt;
+                font-weight: 800;
+                color: #0f172a;
+                margin-top: 4px;
+            }
+
+            /* Tables Style */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-bottom: 15px;
+                table-layout: fixed;
+            }
+
+            th,
+            td {
+                border: 1px solid #e2e8f0;
+                padding: 4px 6px;
+                text-align: right;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            th {
+                background: #f1f5f9;
+                font-weight: 700;
+                color: #334155;
+                text-align: center;
+                font-size: 7.5pt;
+            }
+
+            .month-col {
+                text-align: left;
+                width: 80px;
+                background: #f8fafc;
+                font-weight: 600;
+            }
+
+            .section-header {
+                background: #1e40af;
+                color: white;
+                text-align: center;
+                font-weight: 800;
+                text-transform: uppercase;
+                font-size: 9pt;
+                padding: 6px;
+            }
+
+            .sub-header {
+                background: #e0e7ff;
+                color: #1e40af;
+                text-align: center;
+                font-weight: 700;
+            }
+
+            .total-row {
+                background: #f8fafc;
+                font-weight: 800;
+            }
+
+            .amount {
+                color: #0f172a;
+            }
+
+            .negative {
+                color: #dc2626;
+            }
+
+            .footer {
+                margin-top: 20px;
+                border-top: 1px solid #e2e8f0;
+                padding-top: 10px;
+                text-align: center;
+                font-size: 7pt;
+                color: #94a3b8;
+            }
+        </style>
+    </head>
+
+    <body>
+
+        <div class="header-container">
+            <div class="header-left">
+                <h1>TAMARIND SACCO - Detailed Annual Summary</h1>
+                <p>Consolidated Statement for the Year {{ year }}</p>
+            </div>
+            <img src="{{ logo_url }}" class="logo" alt="Logo">
+        </div>
+
+        <!-- Yearly Performance Overview -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="card-label">Savings Deposits</div>
+                <div class="card-value">{{ data.summary.total_savings|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Loan Disbursed</div>
+                <div class="card-value">{{ data.summary.total_loans_disbursed|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Loan Repaid</div>
+                <div class="card-value">{{ data.summary.total_loans_repaid|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Interest Earned</div>
+                <div class="card-value">{{ data.summary.total_interest_charged|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Net Ventures</div>
+                <div class="card-value">{{ data.summary.total_ventures_net|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">New Guarantees</div>
+                <div class="card-value">{{ data.summary.total_new_guarantees|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card" style="background:#f0fdf4; border:1px solid #166534">
+                <div class="card-label" style="color:#166534">Fee Income</div>
+                <div class="card-value" style="color:#166534">{{ data.summary.total_fee_income|floatformat:0 }}</div>
+            </div>
+            <div class="summary-card" style="background:#f0fdf4; border:1px solid #166534">
+                <div class="card-label" style="color:#166534">Member Contributions</div>
+                <div class="card-value" style="color:#166534">{{ data.summary.total_member_contributions|floatformat:0
+                    }}</div>
+            </div>
+            <div class="summary-card" style="background:#fff7ed; border:1px solid #c2410c">
+                <div class="card-label" style="color:#c2410c">Outstanding Fees</div>
+                <div class="card-value" style="color:#c2410c">{{ data.summary.total_fees_outstanding|floatformat:0 }}
+                </div>
+            </div>
+            <div class="summary-card" style="background:#eff6ff; border:1px solid #1e40af">
+                <div class="card-label" style="color:#1e40af">Outstanding Loans</div>
+                <div class="card-value" style="color:#1e40af">{{ data.summary.total_loan_outstanding|floatformat:0 }}
+                </div>
+            </div>
+        </div>
+
+        <!-- I. SAVINGS PORTFOLIO -->
+        <div class="section-header" style="margin-bottom: 0;">I. SACCO SAVINGS PORTFOLIO</div>
+        <table>
+            <thead>
+                <tr class="sub-header">
+                    <th style="width: 80px;">Month</th>
+                    {% for t in savings_types %}
+                    <th colspan="2">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header" style="background: #f8fafc">
+                    <th></th>
+                    {% for t in savings_types %}
+                    <th>Deposits</th>
+                    <th>Balance</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for s in row.savings %}
+                    <td>{{ s.dep|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9; font-weight:600">{{ s.bal|floatformat:0 }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- II. VENTURES PORTFOLIO -->
+        <div class="section-header" style="margin-bottom: 0; margin-top: 15px;">II. SACCO VENTURES PORTFOLIO</div>
+        <table>
+            <thead>
+                <tr class="sub-header">
+                    <th style="width: 80px;">Month</th>
+                    {% for t in venture_types %}
+                    <th colspan="3">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header" style="background: #f8fafc">
+                    <th></th>
+                    {% for t in venture_types %}
+                    <th>Income</th>
+                    <th>Expense</th>
+                    <th>Net Pos.</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for v in row.ventures %}
+                    <td>{{ v.dep|floatformat:0 }}</td>
+                    <td>{{ v.pay|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9; font-weight:600">{{ v.bal|floatformat:0 }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- III. GUARANTEES PORTFOLIO -->
+        <div class="section-header" style="margin-bottom: 0; margin-top: 15px;">III. SACCO GUARANTEES</div>
+        <table>
+            <thead>
+                <tr class="sub-header">
+                    <th style="width: 80px;">Month</th>
+                    <th>New Guarantee Requests (Accepted)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    <td style="text-align: center; font-weight:600">{{ row.total_guarantees|floatformat:0 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Loan Portfolio Table -->
+        <div style="page-break-before: always;"></div>
+
+        <div class="header-container">
+            <div class="header-left">
+                <h1>SACCO LOAN PORTFOLIO MANAGEMENT</h1>
+                <p>Monthly Repayment and Outstanding Positions - {{ year }}</p>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr class="section-header">
+                    <th colspan="1">Period</th>
+                    {% for t in loan_types %}
+                    <th colspan="4">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header">
+                    <th>Month</th>
+                    {% for t in loan_types %}
+                    <th>Disb</th>
+                    <th>Rep</th>
+                    <th>Int</th>
+                    <th>Out</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for l in row.loans %}
+                    <td>{{ l.disb|floatformat:0 }}</td>
+                    <td>{{ l.rep|floatformat:0 }}</td>
+                    <td>{{ l.int|floatformat:0 }}</td>
+                    <td style="background:#f1f5f9; font-weight:700">{{ l.out|floatformat:0 }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- IV. FEES REVENUE -->
+        <div class="section-header" style="margin-bottom: 0; margin-top: 15px;">IV. SACCO FEES REVENUE</div>
+        <table>
+            <thead>
+                <tr class="sub-header">
+                    <th rowspan="2" style="width: 80px;">Month</th>
+                    {% for t in fee_types %}
+                    <th colspan="2">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header" style="background: #f8fafc">
+                    {% for t in fee_types %}
+                    <th>Paid</th>
+                    <th>Bal</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table_rows %}
+                <tr>
+                    <td class="month-col">{{ row.month }}</td>
+                    {% for f in row.fees %}
+                    <td style="text-align: right;">{{ f.amt|floatformat:0 }}</td>
+                    <td style="text-align: right; background:#f1f5f9; font-weight:600">{{ f.bal|floatformat:0 }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="footer">
+            <p>This is a consolidated management report generated on {{ generated_at }}. Tamarind SACCO Financial
+                Systems.</p>
+        </div>
+
+    </body>
+
+</html>

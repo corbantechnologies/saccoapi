@@ -1,0 +1,11 @@
+1010 | Cash at Bank | Asset
+1020 | Loans Receivable | Asset
+1030 | Interest Receivable | Asset
+2010 | Member Savings Deposits | Liability
+2020 | Member Venture Deposits | Liability
+3010 | Retained Earnings | Equity
+3020 | Share Capital | Equity
+4010 | Interest Income | Revenue
+4020 | Membership Fees | Revenue
+5010 | Operating Expenses | Expense
+5020 | Bank Charges | Expense

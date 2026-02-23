@@ -38,6 +38,8 @@ from accounts.tools import create_member_accounts
 from savings.models import SavingsAccount
 from savingstypes.models import SavingsType
 from venturetypes.models import VentureType
+from feetypes.models import FeeType
+from memberfees.models import MemberFee
 from ventures.models import VentureAccount
 from loans.models import LoanAccount
 from loantypes.models import LoanType
