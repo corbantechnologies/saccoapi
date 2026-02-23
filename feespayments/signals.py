@@ -21,12 +21,17 @@ def post_fee_payment_to_gl(sender, instance, created, **kwargs):
     from finances.models import JournalEntry
 
     with transaction.atomic():
-        # 1. Update MemberFee status if fully paid
+        # 1. Update MemberFee status and balance
         member_fee = instance.member_fee
         total_paid = sum(p.amount for p in member_fee.payments.all())
+        member_fee.remaining_balance = max(member_fee.amount - total_paid, 0)
+        
         if total_paid >= member_fee.amount:
             member_fee.is_paid = True
-            member_fee.save()
+        else:
+            member_fee.is_paid = False
+            
+        member_fee.save()
 
         # 2. Check if already posted to avoid duplicates
         if JournalEntry.objects.filter(reference_id=str(instance.id), source_model="FeePayment").exists():

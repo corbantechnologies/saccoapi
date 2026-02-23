@@ -305,6 +305,10 @@
                 <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_member_contributions|floatformat:2 }}
                 </div>
             </div>
+            <div class="summary-card bg-amber" style="border-left: 4px solid #dc2626;">
+                <div class="summary-card-label">Outstanding Fees</div>
+                <div class="summary-card-value">Ksh. {{ data.summary.total_fees_outstanding|floatformat:2 }}</div>
+            </div>
         </div>
 
         <!-- Savings Table -->
@@ -417,9 +421,15 @@
         <table>
             <thead>
                 <tr>
-                    <th class="month-col">Month</th>
+                    <th rowspan="2" class="month-col">Month</th>
                     {% for t in fee_types %}
-                    <th>{{ t }}</th>
+                    <th colspan="2">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr>
+                    {% for t in fee_types %}
+                    <th>Paid</th>
+                    <th>Bal</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -429,6 +439,7 @@
                     <td class="month-col">{{ row.month }}</td>
                     {% for f in row.fees %}
                     <td class="{% if f.amt == 0 %}zero{% endif %}">{{ f.amt|floatformat:2 }}</td>
+                    <td class="bal-cell {% if f.bal == 0 %}zero{% endif %}">{{ f.bal|floatformat:2 }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}

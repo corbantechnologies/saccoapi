@@ -588,6 +588,11 @@ class MemberYearlySummaryView(APIView):
             "guarantees": {"new": Decimal("0")},
         }  # type: dict[str, dict[str, Decimal]]
 
+        # === FETCH MEMBER FEES FOR BALANCE TRACKING ===
+        member_fees_qs = MemberFee.objects.filter(member=member).select_related("fee_type")
+        member_fees_map = {f.fee_type.name: f for f in member_fees_qs}
+        total_fees_outstanding = member_fees_qs.aggregate(total=Sum("remaining_balance"))["total"] or Decimal("0")
+
         # === FETCH GUARANTOR PROFILE ===
         try:
             guarantor_profile = GuarantorProfile.objects.get(member=member)
@@ -945,9 +950,11 @@ class MemberYearlySummaryView(APIView):
             enhanced_fees = []
             for name in all_fee_types.keys():
                 data = fees_by_type.get(name, {"total": Decimal("0"), "payments": []})
+                mfee = member_fees_map.get(name)
                 enhanced_fees.append({
                     "type": name,
                     "amount": float(Decimal(str(data["total"]))),
+                    "remaining_balance": float(mfee.remaining_balance) if mfee else 0.0,
                     "payments": data["payments"],
                 })
 
@@ -1068,6 +1075,7 @@ class MemberYearlySummaryView(APIView):
                     "total_member_contributions": float(total_member_contributions),
                     "total_guaranteed_active": float(total_active_guarantees),
                     "total_new_guarantees": float(total_new_guarantees),
+                    "total_fees_outstanding": float(total_fees_outstanding),
                     "year_end_balances": year_end_balances,
                 },
                 "monthly_summary": monthly_summary,
@@ -1156,7 +1164,8 @@ class MemberYearlySummaryPDFView(APIView):
             for t in fee_types:
                 item = f_map.get(t)
                 row["fees"].append({
-                    "amt": item["amount"] if item else 0
+                    "amt": item["amount"] if item else 0,
+                    "bal": item["remaining_balance"] if item else 0
                 })
             table_rows.append(row)
 
@@ -1592,6 +1601,7 @@ class SACCOSummaryView(APIView):
                 "total_loan_outstanding": float(sum(running["loan_out"].values())),
                 "total_fee_income": float(sum(yearly["fee_income"].values())),
                 "total_member_contributions": float(sum(yearly["member_contributions"].values())),
+                "total_fees_outstanding": float(MemberFee.objects.aggregate(total=Sum("remaining_balance"))["total"] or 0),
                 "total_guaranteed_active": float(total_active_guarantees),
             },
             "yearly_accumulators": {
@@ -1663,7 +1673,8 @@ class SACCOSummaryPDFView(APIView):
             for t in fee_types:
                 item = f_map.get(t)
                 row["fees"].append({
-                    "amt": item["amount"] if item else 0
+                    "amt": item["amount"] if item else 0,
+                    "bal": item["remaining_balance"] if item else 0
                 })
             table_rows.append(row)
 

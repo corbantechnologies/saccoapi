@@ -202,6 +202,11 @@
                 <div class="card-value" style="color:#166534">{{ data.summary.total_member_contributions|floatformat:0
                     }}</div>
             </div>
+            <div class="summary-card" style="background:#fff7ed; border:1px solid #c2410c">
+                <div class="card-label" style="color:#c2410c">Outstanding Fees</div>
+                <div class="card-value" style="color:#c2410c">{{ data.summary.total_fees_outstanding|floatformat:0 }}
+                </div>
+            </div>
             <div class="summary-card" style="background:#eff6ff; border:1px solid #1e40af">
                 <div class="card-label" style="color:#1e40af">Outstanding Loans</div>
                 <div class="card-value" style="color:#1e40af">{{ data.summary.total_loan_outstanding|floatformat:0 }}
@@ -340,9 +345,15 @@
         <table>
             <thead>
                 <tr class="sub-header">
-                    <th style="width: 80px;">Month</th>
+                    <th rowspan="2" style="width: 80px;">Month</th>
                     {% for t in fee_types %}
-                    <th>{{ t }}</th>
+                    <th colspan="2">{{ t }}</th>
+                    {% endfor %}
+                </tr>
+                <tr class="sub-header" style="background: #f8fafc">
+                    {% for t in fee_types %}
+                    <th>Paid</th>
+                    <th>Bal</th>
                     {% endfor %}
                 </tr>
             </thead>
@@ -352,6 +363,7 @@
                     <td class="month-col">{{ row.month }}</td>
                     {% for f in row.fees %}
                     <td style="text-align: right;">{{ f.amt|floatformat:0 }}</td>
+                    <td style="text-align: right; background:#f1f5f9; font-weight:600">{{ f.bal|floatformat:0 }}</td>
                     {% endfor %}
                 </tr>
                 {% endfor %}

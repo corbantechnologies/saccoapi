@@ -15,6 +15,7 @@ class MemberFeeSerializer(serializers.ModelSerializer):
             "member",
             "fee_type",
             "amount",
+            "remaining_balance",
             "account_number",
             "is_paid",
             "created_at",

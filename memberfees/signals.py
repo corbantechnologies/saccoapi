@@ -21,7 +21,8 @@ def auto_create_member_fees(sender, instance, created, **kwargs):
                 fee = MemberFee.objects.create(
                     member=instance,
                     fee_type=fee_type,
-                    amount=fee_type.standard_amount
+                    amount=fee_type.standard_amount,
+                    remaining_balance=fee_type.standard_amount
                 )
                 created_fees.append(str(fee))
         
