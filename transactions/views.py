@@ -1746,11 +1746,11 @@ class MemberStatementView(APIView):
         savings_deps = SavingsDeposit.objects.filter(savings_account__member=member, transaction_status="Completed")
         savings_with = SavingsWithdrawal.objects.filter(savings_account__member=member, transaction_status="Completed")
         venture_deps = VentureDeposit.objects.filter(venture_account__member=member)
-        venture_pays = VenturePayment.objects.filter(venture_account__member=member)
+        venture_pays = VenturePayment.objects.filter(venture_account__member=member, transaction_status="Completed")
         loan_disb = LoanDisbursement.objects.filter(loan_account__member=member, transaction_status="Completed")
         loan_rep = LoanRepayment.objects.filter(loan_account__member=member, transaction_status="Completed")
         loan_int = TamarindLoanInterest.objects.filter(loan_account__member=member)
-        fee_pays = FeePayment.objects.filter(member_fee__member=member, transaction_status="Completed")
+        fee_pays = FeePayment.objects.filter(member_fee__member=member)
 
         # 2. Filter by date if provided
         if start_date:
