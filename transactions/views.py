@@ -32,12 +32,14 @@ from ventures.models import VentureType
 from transactions.serializers import (
     AccountSerializer,
     MonthlySummarySerializer,
-    BulkUploadSerializer
+    BulkUploadSerializer,
+    MemberTransactionSerializer
 )
 from transactions.models import DownloadLog, BulkTransactionLog
 from accounts.permissions import IsSystemAdminOrReadOnly
 from loantypes.models import LoanType
 from savingsdeposits.models import SavingsDeposit
+from savingswithdrawals.models import SavingsWithdrawal
 from venturepayments.models import VenturePayment
 from venturedeposits.models import VentureDeposit
 from ventures.models import VentureAccount
@@ -581,7 +583,8 @@ class MemberYearlySummaryView(APIView):
             "loan_disb": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_rep": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_int": {name: Decimal("0") for name in all_loan_types.keys()},
-            "fees": {name: Decimal("0") for name in all_fee_types.keys()},
+            "fee_income": {name: Decimal("0") for name in all_fee_types.keys() if all_fee_types[name].is_income},
+            "member_contributions": {name: Decimal("0") for name in all_fee_types.keys() if not all_fee_types[name].is_income},
             "guarantees": {"new": Decimal("0")},
         }  # type: dict[str, dict[str, Decimal]]
 
@@ -815,17 +818,27 @@ class MemberYearlySummaryView(APIView):
             # === FEES ===
             fees = fees_by_month.get(month, [])
             fees_by_type = {}  # type: dict[str, dict]
+            income_fees_month = Decimal("0")
+            contributions_month = Decimal("0")
+
             for f in fees:
                 # type: ignore
                 ftype = f.member_fee.fee_type.name
+                is_income = f.member_fee.fee_type.is_income
                 amount = Decimal(str(f.amount))
+                
                 if ftype not in fees_by_type:
-                    fees_by_type[ftype] = {"total": Decimal("0"), "payments": []}
+                    fees_by_type[ftype] = {"total": Decimal("0"), "payments": [], "is_income": is_income}
+                
                 fees_by_type[ftype]["total"] += amount # type: ignore
                 fees_by_type[ftype]["payments"].append({"type": ftype, "amount": float(amount)}) # type: ignore
                 
-                f_yearly = yearly["fees"]
-                f_yearly[ftype] = f_yearly.get(ftype, Decimal("0")) + amount # type: ignore
+                if is_income:
+                    yearly["fee_income"][ftype] = yearly["fee_income"].get(ftype, Decimal("0")) + amount
+                    income_fees_month += amount
+                else:
+                    yearly["member_contributions"][ftype] = yearly["member_contributions"].get(ftype, Decimal("0")) + amount
+                    contributions_month += amount
 
             # === GUARANTEES (NEW) ===
             new_guarantees = guarantees_by_month.get(month, [])
@@ -967,7 +980,8 @@ class MemberYearlySummaryView(APIView):
                     "transactions": guarantee_data["transactions"]
                 },
                 "fees": {
-                    "total_fees": float(sum([float(Decimal(str(v["total"]))) for v in fees_by_type.values()])),
+                    "fee_income": float(income_fees_month),
+                    "member_contributions": float(contributions_month),
                     "by_type": enhanced_fees,
                 },
             })
@@ -981,7 +995,8 @@ class MemberYearlySummaryView(APIView):
         total_loan_rep = sum(yearly["loan_rep"].values())
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
-        total_fees = sum(yearly["fees"].values())
+        total_fee_income = sum(yearly["fee_income"].values())
+        total_member_contributions = sum(yearly["member_contributions"].values())
         total_new_guarantees = yearly["guarantees"]["new"]
 
         # === EXTRACT DECEMBER'S CARRIED FORWARD ===
@@ -1012,6 +1027,8 @@ class MemberYearlySummaryView(APIView):
             "total_ventures_payments": float(total_vent_pay),
             "total_loans_disbursed": float(total_loan_disb),
             "total_loans_repaid": float(total_loan_rep),
+            "total_fee_income": float(total_fee_income),
+            "total_member_contributions": float(total_member_contributions),
             "total_savings_by_type": [
                 {"type": name, "amount": float(yearly["savings"].get(name, Decimal("0")))}
                 for name in all_savings_types.keys()
@@ -1047,7 +1064,8 @@ class MemberYearlySummaryView(APIView):
                     "total_loans_repaid": float(total_loan_rep),
                     "total_interest_charged": float(total_loan_int),
                     "total_loans_outstanding": float(total_loan_out),
-                    "total_fees_paid": float(total_fees),
+                    "total_fee_income": float(total_fee_income),
+                    "total_member_contributions": float(total_member_contributions),
                     "total_guaranteed_active": float(total_active_guarantees),
                     "total_new_guarantees": float(total_new_guarantees),
                     "year_end_balances": year_end_balances,
@@ -1263,7 +1281,8 @@ class SACCOSummaryView(APIView):
             "loan_disb": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_rep": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_int": {name: Decimal("0") for name in all_loan_types.keys()},
-            "fees": {name: Decimal("0") for name in all_fee_types.keys()},
+            "fee_income": {name: Decimal("0") for name in all_fee_types.keys() if all_fee_types[name].is_income},
+            "member_contributions": {name: Decimal("0") for name in all_fee_types.keys() if not all_fee_types[name].is_income},
             "guarantees": {"new": Decimal("0")},
         }
 
@@ -1367,13 +1386,23 @@ class SACCOSummaryView(APIView):
         ).values("month", "member_fee__fee_type__name").annotate(total=Sum("amount"))
 
         fees_by_month = {}  # type: dict[int, dict[str, Decimal]]
+        income_fees_by_month = {} # type: dict[int, Decimal]
+        contributions_by_month = {} # type: dict[int, Decimal]
+
         for item in fees_qs:
             m = item["month"].month
             name = item["member_fee__fee_type__name"]
+            amount = Decimal(str(item["total"]))
+            is_income = all_fee_types[name].is_income
+            
             if m not in fees_by_month:
                 fees_by_month[m] = {}
-            m_f = fees_by_month[m]
-            m_f[name] = Decimal(str(item["total"]))  # type: ignore
+            fees_by_month[m][name] = amount
+
+            if is_income:
+                income_fees_by_month[m] = income_fees_by_month.get(m, Decimal("0")) + amount
+            else:
+                contributions_by_month[m] = contributions_by_month.get(m, Decimal("0")) + amount
 
         monthly_summary = []
 
@@ -1486,18 +1515,28 @@ class SACCOSummaryView(APIView):
             # Fees
             m_fees = fees_by_month.get(month, {})
             enhanced_fees = []
-            total_fees_month = Decimal("0")
             for name in all_fee_types.keys():
-                f_amt = Decimal(str(m_fees.get(name, 0)))
-                total_fees_month += f_amt
-                
-                f_yearly = yearly["fees"]
-                f_yearly[name] = f_yearly.get(name, Decimal("0")) + f_amt
-                
+                amt = Decimal(str(m_fees.get(name, 0)))
+                is_income = all_fee_types[name].is_income
                 enhanced_fees.append({
                     "type": name,
-                    "amount": float(f_amt),
+                    "amount": float(amt),
+                    "is_income": is_income
                 })
+                if is_income:
+                    yearly["fee_income"][name] += amt
+                else:
+                    yearly["member_contributions"][name] += amt
+            
+            income_month = income_fees_by_month.get(month, Decimal("0"))
+            contributions_month = contributions_by_month.get(month, Decimal("0"))
+                
+            # The following block seems to be a remnant or a mistake in the provided instruction.
+            # It's commented out to avoid syntax errors and logical inconsistencies.
+            # enhanced_fees.append({
+            #     "type": name,
+            #     "amount": float(f_amt),
+            # })
 
             monthly_summary.append({
                 "month": month_name,
@@ -1526,7 +1565,8 @@ class SACCOSummaryView(APIView):
                     "transactions": [] 
                 },
                 "fees": {
-                    "total_fees": float(total_fees_month),
+                    "fee_income": float(income_month),
+                    "member_contributions": float(contributions_month),
                     "by_type": enhanced_fees,
                 },
             })
@@ -1540,26 +1580,32 @@ class SACCOSummaryView(APIView):
         total_loan_rep = sum(yearly["loan_rep"].values())
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
-        total_fees = sum(yearly["fees"].values())
+        total_fee_income = sum(yearly["fee_income"].values())
+        total_member_contributions = sum(yearly["member_contributions"].values())
         total_new_guarantees = yearly["guarantees"]["new"]
 
         # Final Response
         return Response({
-            "year": year,
             "summary": {
-                "total_savings": float(total_savings),
-                "total_venture_deposits": float(total_vent_dep),
-                "total_venture_payments": float(total_vent_pay),
-                "total_ventures_net": float(total_ventures_net),
-                "total_loans_disbursed": float(total_loan_disb),
-                "total_loans_repaid": float(total_loan_rep),
-                "total_interest_charged": float(total_loan_int),
-                "total_loans_outstanding": float(total_loan_out),
-                "total_fees_paid": float(total_fees),
+                "total_savings": float(sum(running["savings"].values())),
+                "total_venture_balance": float(sum(running["venture_net"].values())),
+                "total_loan_outstanding": float(sum(running["loan_out"].values())),
+                "total_fee_income": float(sum(yearly["fee_income"].values())),
+                "total_member_contributions": float(sum(yearly["member_contributions"].values())),
                 "total_guaranteed_active": float(total_active_guarantees),
-                "total_new_guarantees": float(total_new_guarantees),
             },
-            "monthly_summary": monthly_summary,
+            "yearly_accumulators": {
+                "savings": {k: float(v) for k, v in yearly["savings"].items()},
+                "venture_deposits": {k: float(v) for k, v in yearly["vent_dep"].items()},
+                "venture_payments": {k: float(v) for k, v in yearly["vent_pay"].items()},
+                "loan_disbursements": {k: float(v) for k, v in yearly["loan_disb"].items()},
+                "loan_repayments": {k: float(v) for k, v in yearly["loan_rep"].items()},
+                "loan_interest": {k: float(v) for k, v in yearly["loan_int"].items()},
+                "fee_income": {k: float(v) for k, v in yearly["fee_income"].items()},
+                "member_contributions": {k: float(v) for k, v in yearly["member_contributions"].items()},
+                "guarantees": {k: float(v) for k, v in yearly["guarantees"].items()},
+            },
+            "monthly_summary": monthly_summary
         }, status=status.HTTP_200_OK)
 
 
@@ -1676,4 +1722,55 @@ class CashbookView(APIView):
             })
             
         return Response(results, status=status.HTTP_200_OK)
+class MemberStatementView(APIView):
+    """
+    Unified chronological statement of all transactions for a specific member.
+    """
+    def get(self, request, member_no):
+        member = get_object_or_404(User, member_no=member_no, is_member=True)
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
 
+        # 1. Fetch all transaction types
+        savings_deps = SavingsDeposit.objects.filter(savings_account__member=member, transaction_status="Completed")
+        savings_with = SavingsWithdrawal.objects.filter(savings_account__member=member, transaction_status="Completed")
+        venture_deps = VentureDeposit.objects.filter(venture_account__member=member)
+        venture_pays = VenturePayment.objects.filter(venture_account__member=member)
+        loan_disb = LoanDisbursement.objects.filter(loan_account__member=member, transaction_status="Completed")
+        loan_rep = LoanRepayment.objects.filter(loan_account__member=member, transaction_status="Completed")
+        loan_int = TamarindLoanInterest.objects.filter(loan_account__member=member)
+        fee_pays = FeePayment.objects.filter(member_fee__member=member, transaction_status="Completed")
+
+        # 2. Filter by date if provided
+        if start_date:
+            savings_deps = savings_deps.filter(created_at__date__gte=start_date)
+            savings_with = savings_with.filter(created_at__date__gte=start_date)
+            venture_deps = venture_deps.filter(created_at__date__gte=start_date)
+            venture_pays = venture_pays.filter(created_at__date__gte=start_date)
+            loan_disb = loan_disb.filter(created_at__date__gte=start_date)
+            loan_rep = loan_rep.filter(created_at__date__gte=start_date)
+            loan_int = loan_int.filter(created_at__date__gte=start_date)
+            fee_pays = fee_pays.filter(created_at__date__gte=start_date)
+
+        if end_date:
+            savings_deps = savings_deps.filter(created_at__date__lte=end_date)
+            savings_with = savings_with.filter(created_at__date__lte=end_date)
+            venture_deps = venture_deps.filter(created_at__date__lte=end_date)
+            venture_pays = venture_pays.filter(created_at__date__lte=end_date)
+            loan_disb = loan_disb.filter(created_at__date__lte=end_date)
+            loan_rep = loan_rep.filter(created_at__date__lte=end_date)
+            loan_int = loan_int.filter(created_at__date__lte=end_date)
+            fee_pays = fee_pays.filter(created_at__date__lte=end_date)
+
+        # 3. Combine and sort
+        all_transactions = sorted(
+            list(savings_deps) + list(savings_with) + list(venture_deps) + 
+            list(venture_pays) + list(loan_disb) + list(loan_rep) + 
+            list(loan_int) + list(fee_pays),
+            key=lambda x: x.created_at,
+            reverse=True
+        )
+
+        # 4. Serialize
+        serializer = MemberTransactionSerializer(all_transactions, many=True)
+        return Response(serializer.data)

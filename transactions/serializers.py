@@ -142,91 +142,42 @@ class MemberTransactionSerializer(serializers.Serializer):
         return f"{obj.member.first_name} {obj.member.last_name}"
 
     def to_representation(self, instance):
-        # Handle different transaction types
-        if isinstance(instance, SavingsDeposit):
-            return {
-                "member_no": instance.account.member.member_no,
-                "member_name": f"{instance.account.member.first_name} {instance.account.member.last_name}",
-                "account_number": instance.account.account_number,
-                "account_type": "Savings",
-                "transaction_type": "Deposit",
-                "amount": instance.amount,
-                "outstanding_balance": None,
-                "payment_method": instance.payment_method,
-                "transaction_status": instance.transaction_status,
-                "transaction_date": instance.created_at,
-                "details": instance.deposit_type or "N/A",
-            }
-        elif isinstance(instance, SavingsWithdrawal):
-            return {
-                "member_no": instance.account.member.member_no,
-                "member_name": f"{instance.account.member.first_name} {instance.account.member.last_name}",
-                "account_number": instance.account.account_number,
-                "account_type": "Savings",
-                "transaction_type": "Withdrawal",
-                "amount": instance.amount,
-                "outstanding_balance": None,
-                "payment_method": instance.payment_method,
-                "transaction_status": instance.transaction_status,
-                "transaction_date": instance.created_at,
-                "details": "N/A",
-            }
-        elif isinstance(instance, VentureDeposit):
-            return {
-                "member_no": instance.account.member.member_no,
-                "member_name": f"{instance.account.member.first_name} {instance.account.member.last_name}",
-                "account_number": instance.account.account_number,
-                "account_type": "Venture",
-                "transaction_type": "Deposit",
-                "amount": instance.amount,
-                "outstanding_balance": None,
-                "payment_method": instance.payment_method,
-                "transaction_status": instance.transaction_status,
-                "transaction_date": instance.created_at,
-                "details": "N/A",
-            }
-        elif isinstance(instance, VenturePayment):
-            return {
-                "member_no": instance.account.member.member_no,
-                "member_name": f"{instance.account.member.first_name} {instance.account.member.last_name}",
-                "account_number": instance.account.account_number,
-                "account_type": "Venture",
-                "transaction_type": "Payment",
-                "amount": instance.amount,
-                "outstanding_balance": None,
-                "payment_method": instance.payment_method,
-                "transaction_status": instance.transaction_status,
-                "transaction_date": instance.created_at,
-                "details": instance.payment_type or "N/A",
-            }
-        elif isinstance(instance, LoanRepayment):
-            return {
-                "member_no": instance.loan.user.member_no,
-                "member_name": f"{instance.loan.user.first_name} {instance.loan.user.last_name}",
-                "account_number": instance.loan.account_number,
-                "account_type": "Loan",
-                "transaction_type": "Repayment",
-                "amount": instance.amount,
-                "outstanding_balance": instance.loan.outstanding_balance,
-                "payment_method": instance.payment_method,
-                "transaction_status": instance.transaction_status,
-                "transaction_date": instance.created_at,
-                "details": "N/A",
-            }
-        elif isinstance(instance, TamarindLoanInterest):
-            return {
-                "member_no": instance.loan_account.user.member_no,
-                "member_name": f"{instance.loan_account.user.first_name} {instance.loan_account.user.last_name}",
-                "account_number": instance.loan_account.account_number,
-                "account_type": "Interest",
-                "transaction_type": "Interest",
-                "amount": instance.amount,
-                "outstanding_balance": instance.loan_account.outstanding_balance,
-                "payment_method": instance.payment_method or "N/A",
-                "transaction_status": instance.transaction_status or "Completed",
-                "transaction_date": instance.created_at,
-                "details": "N/A",
-            }
+        # Determine Member
+        member = None
+        if hasattr(instance, 'savings_account'):
+            member = instance.savings_account.member
+            acc_no = instance.savings_account.account_number
+            acc_type = instance.savings_account.account_type.name
+        elif hasattr(instance, 'venture_account'):
+            member = instance.venture_account.member
+            acc_no = instance.venture_account.account_number
+            acc_type = instance.venture_account.venture_type.name
+        elif hasattr(instance, 'loan_account'):
+            member = instance.loan_account.member
+            acc_no = instance.loan_account.account_number
+            acc_type = instance.loan_account.loan_type.name
+        elif hasattr(instance, 'member_fee'):
+            member = instance.member_fee.member
+            acc_no = instance.member_fee.account_number
+            acc_type = instance.member_fee.fee_type.name
+            
+        trans_type = instance.__class__.__name__
+        
+        # Consistent mapping
+        return {
+            "member_no": member.member_no if member else "N/A",
+            "member_name": f"{member.first_name} {member.last_name}" if member else "N/A",
+            "account_number": acc_no if 'acc_no' in locals() else "N/A",
+            "account_type": acc_type if 'acc_type' in locals() else "N/A",
+            "transaction_type": trans_type,
+            "amount": float(instance.amount),
+            "outstanding_balance": float(getattr(instance.loan_account, 'outstanding_balance', 0)) if hasattr(instance, 'loan_account') else None,
+            "payment_method": getattr(instance, 'payment_method', 'N/A'),
+            "transaction_status": getattr(instance, 'transaction_status', 'Completed'),
+            "transaction_date": instance.created_at,
+            "details": getattr(instance, 'description', getattr(instance, 'deposit_type', getattr(instance, 'repayment_type', 'N/A'))),
+            "reference": getattr(instance, 'reference', 'N/A')
+        }
         return super().to_representation(instance)
 
 

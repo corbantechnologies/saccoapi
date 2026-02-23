@@ -25,6 +25,7 @@ from loans.serializers import LoanAccountSerializer
 from ventures.serializers import VentureAccountSerializer
 from nextofkin.serializers import NextOfKinSerializer
 from guarantorprofile.serializers import GuarantorProfileSerializer
+from memberfees.serializers import MemberFeeSerializer
 
 User = get_user_model()
 
@@ -50,6 +51,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
     venture_accounts = VentureAccountSerializer(many=True, read_only=True)
     next_of_kin = NextOfKinSerializer(many=True, read_only=True)
     guarantor_profile = GuarantorProfileSerializer(read_only=True)
+    fees = MemberFeeSerializer(many=True, read_only=True)
 
     class Meta:
         model = User
@@ -87,6 +89,7 @@ class BaseUserSerializer(serializers.ModelSerializer):
             "savings_accounts",
             "loans",
             "venture_accounts",
+            "fees",
         )
 
     def create_user(self, validated_data, role_field):

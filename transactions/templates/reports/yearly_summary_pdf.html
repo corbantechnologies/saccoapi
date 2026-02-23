@@ -297,8 +297,13 @@
                 <div class="summary-card-value">Ksh. {{ total_active_guarantees|floatformat:2 }}</div>
             </div>
             <div class="summary-card bg-slate" style="border-left: 4px solid #1e40af;">
-                <div class="summary-card-label">Total Fees Paid</div>
-                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_fees|floatformat:2 }}</div>
+                <div class="summary-card-label">Fee Income</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_fee_income|floatformat:2 }}</div>
+            </div>
+            <div class="summary-card bg-slate" style="border-left: 4px solid #1e40af;">
+                <div class="summary-card-label">Member Contributions</div>
+                <div class="summary-card-value">Ksh. {{ chart_of_accounts.total_member_contributions|floatformat:2 }}
+                </div>
             </div>
         </div>
 

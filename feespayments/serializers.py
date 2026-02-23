@@ -21,6 +21,7 @@ class FeePaymentSerializer(serializers.ModelSerializer):
             "member_fee",
             "amount",
             "payment_method",
+            "receipt_number",
             "paid_by",
             "created_at",
             "updated_at",
