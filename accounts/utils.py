@@ -39,7 +39,7 @@ def send_registration_confirmation_email(user):
             {"user": user, "current_year": current_year},
         )
         params = {
-            "from": "SACCO <onboarding@wananchimali.com>",
+            "from": "Tamarind SACCO <onboarding@wananchimali.com>",
             "to": [user.email],
             "subject": "Registration Confirmation",
             "html": email_body,
@@ -73,7 +73,7 @@ def send_member_number_email(user):
             },
         )
         params = {
-            "from": "SACCO <onboarding@wananchimali.com>",
+            "from": "Tamarind SACCO <onboarding@wananchimali.com>",
             "to": [user.email],
             "subject": "Your Membership Number",
             "html": email_body,
@@ -100,9 +100,9 @@ def send_account_activated_email(user):
             "account_activated.html", {"user": user, "current_year": current_year}
         )
         params = {
-            "from": "SACCO <onboarding@wananchimali.com>",
+            "from": "Tamarind SACCO <onboarding@wananchimali.com>",
             "to": [user.email],
-            "subject": "Welcome to SACCO",
+            "subject": "Welcome to Tamarind SACCO",
             "html": email_body,
         }
         response = resend.Emails.send(params)
@@ -132,7 +132,7 @@ def send_verification_email(user, verification_code):
             },
         )
         params = {
-            "from": "SACCO <onboarding@wananchimali.com>",
+            "from": "Tamarind SACCO <onboarding@wananchimali.com>",
             "to": [user.email],
             "subject": "Verify your account",
             "html": email_body,
@@ -163,7 +163,7 @@ def send_password_reset_email(user, verification_code):
             },
         )
         params = {
-            "from": "SACCO <onboarding@wananchimali.com>",
+            "from": "Tamarind SACCO <onboarding@wananchimali.com>",
             "to": [user.email],
             "subject": "Reset your password",
             "html": email_body,
@@ -189,7 +189,7 @@ def send_account_created_by_admin_email(user, activation_link=None):
     params = {
         "from": "SACCO <onboarding@wananchimali.com>",
         "to": [user.email],
-        "subject": "Activate Your SACCO Account",
+        "subject": "Activate Your Tamarind SACCO Account",
         "html": email_body,
     }
     try:

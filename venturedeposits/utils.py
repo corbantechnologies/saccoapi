@@ -20,7 +20,7 @@ def send_venture_deposit_made_email(member, venture_deposit):
             },
         )
         params = {
-            "from": "SACCO <finance@wananchimali.com>",
+            "from": "Tamarind SACCO <finance@wananchimali.com>",
             "to": [member.email],
             "subject": "Venture Purchase Confirmation",
             "html": email_body,
