@@ -24,7 +24,7 @@ def send_withdrawal_request_email(user, withdrawal):
             {"user": user, "withdrawal": withdrawal, "current_year": current_year},
         )
         params = {
-            "from": "SACCO <finance@wananchimali.com>",
+            "from": "Tamarind SACCO <finance@wananchimali.com>",
             "to": [user.email],
             "subject": "Withdrawal Request",
             "html": email_body,
@@ -48,7 +48,7 @@ def send_withdrawal_status_email(user, withdrawal):
             {"user": user, "withdrawal": withdrawal, "current_year": current_year},
         )
         params = {
-            "from": "SACCO <finance@wananchimali.com>",
+            "from": "Tamarind SACCO <finance@wananchimali.com>",
             "to": [user.email],
             "subject": "Withdrawal Status",
             "html": email_body,

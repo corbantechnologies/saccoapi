@@ -92,7 +92,7 @@ def send_loan_application_status_email(application: LoanApplication):
             },
         )
         params = {
-            "from": "SACCO <notifications@wananchimali.com>",
+            "from": "Tamarind SACCO <notifications@wananchimali.com>",
             "to": [user.email],
             "subject": f"Loan Application Update - {status}",
             "html": email_body,
@@ -127,7 +127,7 @@ def send_admin_loan_application_status_email(application: LoanApplication):
             },
         )
         params = {
-            "from": "SACCO <notifications@wananchimali.com>",
+            "from": "Tamarind SACCO <notifications@wananchimali.com>",
             "to": [admin_email],
             "subject": f"Action Required: Loan Application - {status}",
             "html": email_body,

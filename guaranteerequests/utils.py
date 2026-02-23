@@ -34,7 +34,7 @@ def send_guarantor_guarantee_request_status_email(guarantee_request: GuaranteeRe
             },
         )
         params = {
-            "from": "SACCO <notifications@wananchimali.com>",
+            "from": "Tamarind SACCO <notifications@wananchimali.com>",
             "to": [guarantor.email],
             "subject": "New Guarantee Request",
             "html": email_body,
@@ -72,7 +72,7 @@ def send_guarantee_request_status_email(guarantee_request: GuaranteeRequest):
             },
         )
         params = {
-            "from": "SACCO <notifications@wananchimali.com>",
+            "from": "Tamarind SACCO <notifications@wananchimali.com>",
             "to": [applicant.email],
             "subject": f"Guarantee Request Update - {status}",
             "html": email_body,
