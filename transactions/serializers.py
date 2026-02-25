@@ -100,6 +100,15 @@ class AccountSerializer(serializers.ModelSerializer):
             .order_by("-created_at")
         )
 
+    def get_fees(self, obj):
+        return [
+            {
+                "account_number": fee.account_number,
+                "fee_type_name": fee.fee_type.name,
+            }
+            for fee in MemberFee.objects.filter(member=obj).select_related("fee_type")
+        ]
+
     def get_member_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
 
@@ -144,39 +153,51 @@ class MemberTransactionSerializer(serializers.Serializer):
     def to_representation(self, instance):
         # Determine Member
         member = None
-        if hasattr(instance, 'savings_account'):
+        if hasattr(instance, "savings_account"):
             member = instance.savings_account.member
             acc_no = instance.savings_account.account_number
             acc_type = instance.savings_account.account_type.name
-        elif hasattr(instance, 'venture_account'):
+        elif hasattr(instance, "venture_account"):
             member = instance.venture_account.member
             acc_no = instance.venture_account.account_number
             acc_type = instance.venture_account.venture_type.name
-        elif hasattr(instance, 'loan_account'):
+        elif hasattr(instance, "loan_account"):
             member = instance.loan_account.member
             acc_no = instance.loan_account.account_number
             acc_type = instance.loan_account.loan_type.name
-        elif hasattr(instance, 'member_fee'):
+        elif hasattr(instance, "member_fee"):
             member = instance.member_fee.member
             acc_no = instance.member_fee.account_number
             acc_type = instance.member_fee.fee_type.name
-            
+
         trans_type = instance.__class__.__name__
-        
+
         # Consistent mapping
         return {
             "member_no": member.member_no if member else "N/A",
-            "member_name": f"{member.first_name} {member.last_name}" if member else "N/A",
-            "account_number": acc_no if 'acc_no' in locals() else "N/A",
-            "account_type": acc_type if 'acc_type' in locals() else "N/A",
+            "member_name": (
+                f"{member.first_name} {member.last_name}" if member else "N/A"
+            ),
+            "account_number": acc_no if "acc_no" in locals() else "N/A",
+            "account_type": acc_type if "acc_type" in locals() else "N/A",
             "transaction_type": trans_type,
             "amount": float(instance.amount),
-            "outstanding_balance": float(getattr(instance.loan_account, 'outstanding_balance', 0)) if hasattr(instance, 'loan_account') else None,
-            "payment_method": getattr(instance, 'payment_method', 'N/A'),
-            "transaction_status": getattr(instance, 'transaction_status', 'Completed'),
+            "outstanding_balance": (
+                float(getattr(instance.loan_account, "outstanding_balance", 0))
+                if hasattr(instance, "loan_account")
+                else None
+            ),
+            "payment_method": getattr(instance, "payment_method", "N/A"),
+            "transaction_status": getattr(instance, "transaction_status", "Completed"),
             "transaction_date": instance.created_at,
-            "details": getattr(instance, 'description', getattr(instance, 'deposit_type', getattr(instance, 'repayment_type', 'N/A'))),
-            "reference": getattr(instance, 'reference', 'N/A')
+            "details": getattr(
+                instance,
+                "description",
+                getattr(
+                    instance, "deposit_type", getattr(instance, "repayment_type", "N/A")
+                ),
+            ),
+            "reference": getattr(instance, "reference", "N/A"),
         }
         return super().to_representation(instance)
 
