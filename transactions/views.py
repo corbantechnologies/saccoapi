@@ -68,7 +68,7 @@ class AccountListView(generics.ListAPIView):
         return (
             User.objects.all()
             .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts", "fees__fee_type")
+            .prefetch_related("savings_accounts", "venture_accounts", "fees__fee_type", "fees__payments")
         )
 
 
@@ -81,7 +81,7 @@ class AccountDetailView(generics.RetrieveAPIView):
         return (
             User.objects.all()
             .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts", "fees__fee_type")
+            .prefetch_related("savings_accounts", "venture_accounts", "fees__fee_type", "fees__payments")
         )
 
 
@@ -94,6 +94,7 @@ class AccountListDownloadView(generics.ListAPIView):
             "savings_accounts",
             "venture_accounts",
             "fees__fee_type",
+            "fees__payments",
             "loans",
             "loans__loan_disbursements",
             "loans__repayments",
