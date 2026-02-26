@@ -494,12 +494,25 @@ class MemberYearlySummaryView(APIView):
         all_loan_types = {t.name: t for t in LoanType.objects.all()}
         all_fee_types = {t.name: t for t in FeeType.objects.all()}
 
+        # === FETCH MEMBER FEES FOR BALANCE TRACKING ===
+        member_fees_qs = MemberFee.objects.filter(member=member).select_related("fee_type")
+        member_fees_map = {f.fee_type.name: f for f in member_fees_qs}
+        
+        total_fees_outstanding = Decimal("0")
+        for ftype in all_fee_types.values():
+            mfee = member_fees_map.get(ftype.name)
+            if mfee:
+                total_fees_outstanding += mfee.remaining_balance
+            else:
+                total_fees_outstanding += ftype.standard_amount
+
         # === 1. FETCH PRIOR YEAR ENDING BALANCES (for B/F in January) ===
         prior_year = year - 1
         prior_balances = {
             "savings": {name: Decimal("0") for name in all_savings_types.keys()},
             "venture_net": {name: Decimal("0") for name in all_venture_types.keys()},
             "loan_out": {name: Decimal("0") for name in all_loan_types.keys()},
+            "fee_out": {name: Decimal("0") for name in all_fee_types.keys()},
         }
 
         if prior_year >= 2020:
@@ -568,11 +581,30 @@ class MemberYearlySummaryView(APIView):
                 rep = rep_map.get(name, Decimal("0"))
                 prior_balances["loan_out"][name] = max(disb - rep, Decimal("0"))
 
+            # --- FEES ---
+            prior_fee_pays_qs = (
+                FeePayment.objects.filter(
+                    member_fee__member=member,
+                    created_at__year__lt=year,
+                )
+                .values("member_fee__fee_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            fee_pay_map = {x["member_fee__fee_type__name"]: Decimal(str(x["total"])) for x in prior_fee_pays_qs}
+            for name, ftype in all_fee_types.items():
+                mfee = member_fees_map.get(name)
+                billed = mfee.amount if mfee else ftype.standard_amount
+                creation_year = mfee.created_at.year if mfee else 1900
+                billed_prior = billed if creation_year < year else Decimal("0")
+                pay = fee_pay_map.get(name, Decimal("0"))
+                prior_balances["fee_out"][name] = max(billed_prior - pay, Decimal("0"))
+
         # === 2. INITIALIZE RUNNING BALANCES WITH PRIOR YEAR ===
         running = {
-            "savings": {name: Decimal("0") for name in all_savings_types.keys()},
-            "venture_net": {name: Decimal("0") for name in all_venture_types.keys()},
-            "loan_out": {name: Decimal("0") for name in all_loan_types.keys()},
+            "savings": prior_balances["savings"].copy(),
+            "venture_net": prior_balances["venture_net"].copy(),
+            "loan_out": prior_balances["loan_out"].copy(),
+            "fee_out": prior_balances["fee_out"].copy(),
         }  # type: dict[str, dict[str, Decimal]]
 
         # === YEARLY ACCUMULATORS ===
@@ -587,11 +619,6 @@ class MemberYearlySummaryView(APIView):
             "member_contributions": {name: Decimal("0") for name in all_fee_types.keys() if not all_fee_types[name].is_income},
             "guarantees": {"new": Decimal("0")},
         }  # type: dict[str, dict[str, Decimal]]
-
-        # === FETCH MEMBER FEES FOR BALANCE TRACKING ===
-        member_fees_qs = MemberFee.objects.filter(member=member).select_related("fee_type")
-        member_fees_map = {f.fee_type.name: f for f in member_fees_qs}
-        total_fees_outstanding = member_fees_qs.aggregate(total=Sum("remaining_balance"))["total"] or Decimal("0")
 
         # === FETCH GUARANTOR PROFILE ===
         try:
@@ -866,6 +893,17 @@ class MemberYearlySummaryView(APIView):
                 })
 
             # === UPDATE RUNNING BALANCES ===
+            # if a fee was billed this month, add to running balance before subtracting payments
+            for name, ftype in all_fee_types.items():
+                mfee = member_fees_map.get(name)
+                creation_year = mfee.created_at.year if mfee else 1900
+                creation_month = mfee.created_at.month if mfee else 1
+                billed = mfee.amount if mfee else ftype.standard_amount
+                
+                # if billed exactly in this month, running increases
+                if creation_year == year and creation_month == month:
+                    running["fee_out"][name] = Decimal(str(running["fee_out"].get(name, 0))) + billed
+
             for name, data in savings_by_type.items():
                 r_savings = running["savings"]
                 r_savings[name] = Decimal(str(r_savings.get(name, 0))) + Decimal(str(data["total"]))  # type: ignore
@@ -879,6 +917,11 @@ class MemberYearlySummaryView(APIView):
                 rep = sum([Decimal(str(r["amount"])) for r in data.get("repaid", [])]) # type: ignore
                 r_loan = running["loan_out"]
                 r_loan[name] = Decimal(str(r_loan.get(name, 0))) + (disb - rep)  # type: ignore
+
+            for name, data in fees_by_type.items():
+                pay = Decimal(str(data["total"]))
+                r_fee = running["fee_out"]
+                r_fee[name] = max(Decimal(str(r_fee.get(name, 0))) - pay, Decimal("0"))
 
             # === CALCULATE MONTHLY TOTALS ===
             total_savings_month = sum([Decimal(str(v["total"])) for v in savings_by_type.values()])
@@ -950,12 +993,28 @@ class MemberYearlySummaryView(APIView):
             enhanced_fees = []
             for name in all_fee_types.keys():
                 data = fees_by_type.get(name, {"total": Decimal("0"), "payments": []})
+                pay_total = Decimal(str(data["total"]))
+                
                 mfee = member_fees_map.get(name)
+                creation_year = mfee.created_at.year if mfee else 1900
+                creation_month = mfee.created_at.month if mfee else 1
+                billed = mfee.amount if mfee else all_fee_types[name].standard_amount
+                
+                # Billed this month?
+                billed_month = billed if (creation_year == year and creation_month == month) else Decimal("0")
+                
+                r_fee = running["fee_out"]
+                net_month = billed_month - pay_total
+                brought = Decimal(str(r_fee.get(name, 0))) - net_month
+                
                 enhanced_fees.append({
-                    "type": name,
-                    "amount": float(Decimal(str(data["total"]))),
-                    "remaining_balance": float(mfee.remaining_balance) if mfee else 0.0,
+                    "fee_type": name,
+                    "total_expected": float(billed),
+                    "total_amount_paid": float(pay_total),
+                    "total_amount_outstanding": float(r_fee.get(name, 0)),
                     "payments": data["payments"],
+                    "balance_brought_forward": float(brought),
+                    "balance_carried_forward": float(r_fee.get(name, 0)),
                 })
 
             # === APPEND MONTH WITH FULL SUMMARY + TOTAL BALANCE ===
@@ -1160,12 +1219,12 @@ class MemberYearlySummaryPDFView(APIView):
                     "out": item["total_amount_outstanding"] if item else 0
                 })
             # Fees mapping
-            f_map = {item["type"]: item for item in m["fees"]["by_type"]}
+            f_map = {item["fee_type"]: item for item in m["fees"]["by_type"]}
             for t in fee_types:
                 item = f_map.get(t)
                 row["fees"].append({
-                    "amt": item["amount"] if item else 0,
-                    "bal": item["remaining_balance"] if item else 0
+                    "amt": item["total_amount_paid"] if item else 0,
+                    "bal": item["total_amount_outstanding"] if item else 0
                 })
             table_rows.append(row)
 
@@ -1223,6 +1282,7 @@ class SACCOSummaryView(APIView):
             "savings": {name: Decimal("0") for name in all_savings_types.keys()},
             "venture_net": {name: Decimal("0") for name in all_venture_types.keys()},
             "loan_out": {name: Decimal("0") for name in all_loan_types.keys()},
+            "fee_out": {name: Decimal("0") for name in all_fee_types.keys()},
         }
 
         if prior_year >= 2020:
@@ -1275,11 +1335,27 @@ class SACCOSummaryView(APIView):
                 rep = rep_map.get(name, Decimal("0"))
                 prior_balances["loan_out"][name] = max(disb - rep, Decimal("0"))
 
+            # --- FEES ---
+            prior_fee_pays_sacco = (
+                FeePayment.objects.filter(
+                    created_at__year__lt=year,
+                )
+                .values("member_fee__fee_type__name")
+                .annotate(total=Sum("amount"))
+            )
+            fee_pay_map_sacco = {x["member_fee__fee_type__name"]: Decimal(str(x["total"])) for x in prior_fee_pays_sacco}
+            for name, ftype in all_fee_types.items():
+                mfees_for_type = MemberFee.objects.filter(fee_type=ftype)
+                billed_prior = sum([f.amount for f in mfees_for_type if f.created_at.year < year])
+                pay = fee_pay_map_sacco.get(name, Decimal("0"))
+                prior_balances["fee_out"][name] = max(billed_prior - pay, Decimal("0"))
+
         # === 2. INITIALIZE RUNNING BALANCES WITH PRIOR YEAR ===
         running = {
             "savings": prior_balances["savings"].copy(),
             "venture_net": prior_balances["venture_net"].copy(),
             "loan_out": prior_balances["loan_out"].copy(),
+            "fee_out": prior_balances["fee_out"].copy(),
         }
 
         # === YEARLY ACCUMULATORS ===
@@ -1299,6 +1375,11 @@ class SACCOSummaryView(APIView):
             total_active_guarantees = GuarantorProfile.objects.aggregate(total=Sum('committed_guarantee_amount'))['total'] or Decimal('0')
         except:
             total_active_guarantees = Decimal("0")
+
+        try:
+            total_fees_outstanding = sum(f.remaining_balance for f in MemberFee.objects.all())
+        except Exception:
+            total_fees_outstanding = Decimal("0")
 
         # === FEES ===
         total_fees = FeePayment.objects.filter(
@@ -1524,14 +1605,36 @@ class SACCOSummaryView(APIView):
             # Fees
             m_fees = fees_by_month.get(month, {})
             enhanced_fees = []
+            
+            # if a fee was billed this month, add to running balance before subtracting payments
+            for name, ftype in all_fee_types.items():
+                mfees_for_type = MemberFee.objects.filter(fee_type=ftype)
+                billed_month = sum([f.amount for f in mfees_for_type if f.created_at.year == year and f.created_at.month == month])
+                running["fee_out"][name] = Decimal(str(running["fee_out"].get(name, 0))) + billed_month
+
             for name in all_fee_types.keys():
                 amt = Decimal(str(m_fees.get(name, 0)))
                 is_income = all_fee_types[name].is_income
+                
+                mfees_for_type = MemberFee.objects.filter(fee_type=all_fee_types[name])
+                billed_month = sum([f.amount for f in mfees_for_type if f.created_at.year == year and f.created_at.month == month])
+                
+                r_fee = running["fee_out"]
+                brought = Decimal(str(r_fee.get(name, 0))) - (billed_month - amt)
+                r_fee[name] = max(Decimal(str(r_fee.get(name, 0))) - amt, Decimal("0"))
+                
+                total_expected = sum([f.amount for f in mfees_for_type])
+                
                 enhanced_fees.append({
-                    "type": name,
-                    "amount": float(amt),
+                    "fee_type": name,
+                    "total_expected": float(total_expected),
+                    "total_amount_paid": float(amt),
+                    "total_amount_outstanding": float(r_fee.get(name, 0)),
+                    "balance_brought_forward": float(brought),
+                    "balance_carried_forward": float(r_fee.get(name, 0)),
                     "is_income": is_income
                 })
+                
                 if is_income:
                     yearly["fee_income"][name] += amt
                 else:
@@ -1633,7 +1736,7 @@ class SACCOSummaryPDFView(APIView):
         savings_types = sorted(list({s["type"] for m in data["monthly_summary"] for s in m["savings"]["by_type"]}))
         venture_types = sorted(list({v["venture_type"] for m in data["monthly_summary"] for v in m["ventures"]["by_type"]}))
         loan_types = sorted(list({l["loan_type"] for m in data["monthly_summary"] for l in m["loans"]["by_type"]}))
-        fee_types = sorted(list({f["type"] for m in data["monthly_summary"] for f in m["fees"]["by_type"]}))
+        fee_types = sorted(list({f["fee_type"] for m in data["monthly_summary"] for f in m["fees"]["by_type"]}))
 
         table_rows = []
         for m in data["monthly_summary"]:
@@ -1669,12 +1772,12 @@ class SACCOSummaryPDFView(APIView):
                     "int": item["total_interest_charged"] if item else 0,
                     "out": item["total_amount_outstanding"] if item else 0
                 })
-            f_map = {item["type"]: item for item in m["fees"]["by_type"]}
+            f_map = {item["fee_type"]: item for item in m["fees"]["by_type"]}
             for t in fee_types:
                 item = f_map.get(t)
                 row["fees"].append({
-                    "amt": item["amount"] if item else 0,
-                    "bal": item["remaining_balance"] if item else 0
+                    "amt": item["total_amount_paid"] if item else 0,
+                    "bal": item["total_amount_outstanding"] if item else 0
                 })
             table_rows.append(row)
 
