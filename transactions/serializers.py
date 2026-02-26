@@ -105,8 +105,10 @@ class AccountSerializer(serializers.ModelSerializer):
             {
                 "account_number": fee.account_number,
                 "fee_type_name": fee.fee_type.name,
+                "amount": float(fee.amount),
+                "remaining_balance": float(fee.remaining_balance),
             }
-            for fee in MemberFee.objects.filter(member=obj).select_related("fee_type")
+            for fee in obj.fees.all()
         ]
 
     def get_member_name(self, obj):
