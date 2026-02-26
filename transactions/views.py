@@ -68,7 +68,7 @@ class AccountListView(generics.ListAPIView):
         return (
             User.objects.all()
             .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts")
+            .prefetch_related("savings_accounts", "venture_accounts", "fees__fee_type")
         )
 
 
@@ -81,7 +81,7 @@ class AccountDetailView(generics.RetrieveAPIView):
         return (
             User.objects.all()
             .filter(is_member=True)
-            .prefetch_related("savings_accounts", "venture_accounts")
+            .prefetch_related("savings_accounts", "venture_accounts", "fees__fee_type")
         )
 
 
@@ -93,6 +93,7 @@ class AccountListDownloadView(generics.ListAPIView):
         return User.objects.filter(is_member=True).prefetch_related(
             "savings_accounts",
             "venture_accounts",
+            "fees__fee_type",
             "loans",
             "loans__loan_disbursements",
             "loans__repayments",
@@ -441,7 +442,6 @@ class CombinedBulkUploadView(generics.CreateAPIView):
                                 amount=amount,
                                 paid_by=admin,
                                 payment_method=row.get("Payment Method", "Cash"),
-                                transaction_status="Completed",
                             )
                             success_count += 1
 
