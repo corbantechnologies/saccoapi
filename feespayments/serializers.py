@@ -28,15 +28,5 @@ class FeePaymentSerializer(serializers.ModelSerializer):
             "reference",
         )
 
-    def validate(self, attrs):
-        member_fee = attrs.get("member_fee")
-        amount = attrs.get("amount")
-
-        if member_fee.is_paid:
-            raise serializers.ValidationError("Member fee is already paid")
-        if amount > member_fee.amount:
-            raise serializers.ValidationError("Amount is greater than member fee amount")
-        return attrs
-
 class BulkFeePaymentSerializer(serializers.Serializer):
     fee_payments = FeePaymentSerializer(many=True)
