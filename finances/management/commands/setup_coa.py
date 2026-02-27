@@ -14,6 +14,7 @@ class Command(BaseCommand):
             # LIABILITIES
             {'code': '2010', 'name': 'Member Savings Deposits', 'account_type': 'Liability'},
             {'code': '2020', 'name': 'Member Venture Deposits', 'account_type': 'Liability'},
+            {'code': '2030', 'name': 'Member Contributions', 'account_type': 'Liability'},
             
             # EQUITY
             {'code': '3010', 'name': 'Retained Earnings', 'account_type': 'Equity'},
