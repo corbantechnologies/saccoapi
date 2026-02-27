@@ -41,10 +41,21 @@ def post_to_gl(instance, transaction_type):
     dr_code = mappings[transaction_type]['dr']
     cr_code = mappings[transaction_type]['cr']
 
-    # Dynamic mapping for fee_payment based on is_income
+    # Dynamic mapping for fee_payment based on FeeType flags
     if transaction_type == 'fee_payment' and hasattr(instance, 'member_fee'):
-        if not instance.member_fee.fee_type.is_income:
+        fee_type = instance.member_fee.fee_type
+        if fee_type.is_income:
+            cr_code = '4020'  # Membership Fees (Revenue)
+        elif fee_type.is_liability:
             cr_code = '2030'  # Member Contributions (Liability)
+        elif fee_type.is_equity:
+            cr_code = '3020'  # Share Capital (Equity)
+        elif fee_type.is_asset:
+            cr_code = '1020'  # Receivables (Asset)
+        elif fee_type.is_expense:
+            cr_code = '5010'  # Expenses (Expense Recovery)
+        else:
+            cr_code = '2030'  # Default fallback
     
     try:
         with transaction.atomic():
