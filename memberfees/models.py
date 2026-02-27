@@ -22,3 +22,10 @@ class MemberFee(TimeStampedModel, UniversalIdModel, ReferenceModel):
 
     def __str__(self):
         return f"{self.account_number} - {self.member.member_no} - {self.fee_type.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.pk and self.amount and not self.remaining_balance:
+            # When initially created, if remaining_balance is left 0 but amount has a value,
+            # prepopulate it with the expected billed amount.
+            self.remaining_balance = self.amount
+        super().save(*args, **kwargs)
