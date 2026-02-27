@@ -615,8 +615,12 @@ class MemberYearlySummaryView(APIView):
             "loan_disb": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_rep": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_int": {name: Decimal("0") for name in all_loan_types.keys()},
-            "fee_income": {name: Decimal("0") for name in all_fee_types.keys() if all_fee_types[name].is_income},
-            "member_contributions": {name: Decimal("0") for name in all_fee_types.keys() if not all_fee_types[name].is_income},
+            "fee_income": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_income},
+            "fee_liability": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_liability},
+            "fee_equity": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_equity},
+            "fee_asset": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_asset},
+            "fee_expense": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_expense},
+            "member_contributions": {name: Decimal("0") for name, ft in all_fee_types.items() if not (ft.is_income or ft.is_liability or ft.is_equity or ft.is_asset or ft.is_expense)},
             "guarantees": {"new": Decimal("0")},
         }  # type: dict[str, dict[str, Decimal]]
 
@@ -851,23 +855,39 @@ class MemberYearlySummaryView(APIView):
             fees = fees_by_month.get(month, [])
             fees_by_type = {}  # type: dict[str, dict]
             income_fees_month = Decimal("0")
+            liability_fees_month = Decimal("0")
+            equity_fees_month = Decimal("0")
+            asset_fees_month = Decimal("0")
+            expense_fees_month = Decimal("0")
             contributions_month = Decimal("0")
 
             for f in fees:
                 # type: ignore
-                ftype = f.member_fee.fee_type.name
-                is_income = f.member_fee.fee_type.is_income
+                ftype_obj = f.member_fee.fee_type
+                ftype = ftype_obj.name
                 amount = Decimal(str(f.amount))
                 
                 if ftype not in fees_by_type:
-                    fees_by_type[ftype] = {"total": Decimal("0"), "payments": [], "is_income": is_income}
+                    fees_by_type[ftype] = {"total": Decimal("0"), "payments": [], "is_income": ftype_obj.is_income}
                 
                 fees_by_type[ftype]["total"] += amount # type: ignore
                 fees_by_type[ftype]["payments"].append({"type": ftype, "amount": float(amount)}) # type: ignore
                 
-                if is_income:
+                if ftype_obj.is_income:
                     yearly["fee_income"][ftype] = yearly["fee_income"].get(ftype, Decimal("0")) + amount
                     income_fees_month += amount
+                elif ftype_obj.is_liability:
+                    yearly["fee_liability"][ftype] = yearly["fee_liability"].get(ftype, Decimal("0")) + amount
+                    liability_fees_month += amount
+                elif ftype_obj.is_equity:
+                    yearly["fee_equity"][ftype] = yearly["fee_equity"].get(ftype, Decimal("0")) + amount
+                    equity_fees_month += amount
+                elif ftype_obj.is_asset:
+                    yearly["fee_asset"][ftype] = yearly["fee_asset"].get(ftype, Decimal("0")) + amount
+                    asset_fees_month += amount
+                elif ftype_obj.is_expense:
+                    yearly["fee_expense"][ftype] = yearly["fee_expense"].get(ftype, Decimal("0")) + amount
+                    expense_fees_month += amount
                 else:
                     yearly["member_contributions"][ftype] = yearly["member_contributions"].get(ftype, Decimal("0")) + amount
                     contributions_month += amount
@@ -1062,6 +1082,10 @@ class MemberYearlySummaryView(APIView):
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
         total_fee_income = sum(yearly["fee_income"].values())
+        total_fee_liability = sum(yearly["fee_liability"].values())
+        total_fee_equity = sum(yearly["fee_equity"].values())
+        total_fee_asset = sum(yearly["fee_asset"].values())
+        total_fee_expense = sum(yearly["fee_expense"].values())
         total_member_contributions = sum(yearly["member_contributions"].values())
         total_new_guarantees = yearly["guarantees"]["new"]
 
@@ -1094,6 +1118,10 @@ class MemberYearlySummaryView(APIView):
             "total_loans_disbursed": float(total_loan_disb),
             "total_loans_repaid": float(total_loan_rep),
             "total_fee_income": float(total_fee_income),
+            "total_fee_liability": float(total_fee_liability),
+            "total_fee_equity": float(total_fee_equity),
+            "total_fee_asset": float(total_fee_asset),
+            "total_fee_expense": float(total_fee_expense),
             "total_member_contributions": float(total_member_contributions),
             "total_savings_by_type": [
                 {"type": name, "amount": float(yearly["savings"].get(name, Decimal("0")))}
@@ -1366,8 +1394,12 @@ class SACCOSummaryView(APIView):
             "loan_disb": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_rep": {name: Decimal("0") for name in all_loan_types.keys()},
             "loan_int": {name: Decimal("0") for name in all_loan_types.keys()},
-            "fee_income": {name: Decimal("0") for name in all_fee_types.keys() if all_fee_types[name].is_income},
-            "member_contributions": {name: Decimal("0") for name in all_fee_types.keys() if not all_fee_types[name].is_income},
+            "fee_income": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_income},
+            "fee_liability": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_liability},
+            "fee_equity": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_equity},
+            "fee_asset": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_asset},
+            "fee_expense": {name: Decimal("0") for name, ft in all_fee_types.items() if ft.is_expense},
+            "member_contributions": {name: Decimal("0") for name, ft in all_fee_types.items() if not (ft.is_income or ft.is_liability or ft.is_equity or ft.is_asset or ft.is_expense)},
             "guarantees": {"new": Decimal("0")},
         }
 
@@ -1477,20 +1509,32 @@ class SACCOSummaryView(APIView):
 
         fees_by_month = {}  # type: dict[int, dict[str, Decimal]]
         income_fees_by_month = {} # type: dict[int, Decimal]
+        liability_fees_by_month = {} # type: dict[int, Decimal]
+        equity_fees_by_month = {} # type: dict[int, Decimal]
+        asset_fees_by_month = {} # type: dict[int, Decimal]
+        expense_fees_by_month = {} # type: dict[int, Decimal]
         contributions_by_month = {} # type: dict[int, Decimal]
 
         for item in fees_qs:
             m = item["month"].month
             name = item["member_fee__fee_type__name"]
             amount = Decimal(str(item["total"]))
-            is_income = all_fee_types[name].is_income
+            ftype_obj = all_fee_types[name]
             
             if m not in fees_by_month:
                 fees_by_month[m] = {}
             fees_by_month[m][name] = amount
 
-            if is_income:
+            if ftype_obj.is_income:
                 income_fees_by_month[m] = income_fees_by_month.get(m, Decimal("0")) + amount
+            elif ftype_obj.is_liability:
+                liability_fees_by_month[m] = liability_fees_by_month.get(m, Decimal("0")) + amount
+            elif ftype_obj.is_equity:
+                equity_fees_by_month[m] = equity_fees_by_month.get(m, Decimal("0")) + amount
+            elif ftype_obj.is_asset:
+                asset_fees_by_month[m] = asset_fees_by_month.get(m, Decimal("0")) + amount
+            elif ftype_obj.is_expense:
+                expense_fees_by_month[m] = expense_fees_by_month.get(m, Decimal("0")) + amount
             else:
                 contributions_by_month[m] = contributions_by_month.get(m, Decimal("0")) + amount
 
@@ -1614,9 +1658,10 @@ class SACCOSummaryView(APIView):
 
             for name in all_fee_types.keys():
                 amt = Decimal(str(m_fees.get(name, 0)))
-                is_income = all_fee_types[name].is_income
+                ftype_obj = all_fee_types[name]
+                is_income = ftype_obj.is_income
                 
-                mfees_for_type = MemberFee.objects.filter(fee_type=all_fee_types[name])
+                mfees_for_type = MemberFee.objects.filter(fee_type=ftype_obj)
                 billed_month = sum([f.amount for f in mfees_for_type if f.created_at.year == year and f.created_at.month == month])
                 
                 r_fee = running["fee_out"]
@@ -1635,12 +1680,24 @@ class SACCOSummaryView(APIView):
                     "is_income": is_income
                 })
                 
-                if is_income:
+                if ftype_obj.is_income:
                     yearly["fee_income"][name] += amt
+                elif ftype_obj.is_liability:
+                    yearly["fee_liability"][name] += amt
+                elif ftype_obj.is_equity:
+                    yearly["fee_equity"][name] += amt
+                elif ftype_obj.is_asset:
+                    yearly["fee_asset"][name] += amt
+                elif ftype_obj.is_expense:
+                    yearly["fee_expense"][name] += amt
                 else:
                     yearly["member_contributions"][name] += amt
             
             income_month = income_fees_by_month.get(month, Decimal("0"))
+            liability_fees_month = liability_fees_by_month.get(month, Decimal("0"))
+            equity_fees_month = equity_fees_by_month.get(month, Decimal("0"))
+            asset_fees_month = asset_fees_by_month.get(month, Decimal("0"))
+            expense_fees_month = expense_fees_by_month.get(month, Decimal("0"))
             contributions_month = contributions_by_month.get(month, Decimal("0"))
                 
             # The following block seems to be a remnant or a mistake in the provided instruction.
@@ -1678,6 +1735,10 @@ class SACCOSummaryView(APIView):
                 },
                 "fees": {
                     "fee_income": float(income_month),
+                    "fee_liability": float(liability_fees_month),
+                    "fee_equity": float(equity_fees_month),
+                    "fee_asset": float(asset_fees_month),
+                    "fee_expense": float(expense_fees_month),
                     "member_contributions": float(contributions_month),
                     "by_type": enhanced_fees,
                 },
@@ -1693,6 +1754,10 @@ class SACCOSummaryView(APIView):
         total_loan_int = sum(yearly["loan_int"].values())
         total_loan_out = sum(running["loan_out"].values())
         total_fee_income = sum(yearly["fee_income"].values())
+        total_fee_liability = sum(yearly["fee_liability"].values())
+        total_fee_equity = sum(yearly["fee_equity"].values())
+        total_fee_asset = sum(yearly["fee_asset"].values())
+        total_fee_expense = sum(yearly["fee_expense"].values())
         total_member_contributions = sum(yearly["member_contributions"].values())
         total_new_guarantees = yearly["guarantees"]["new"]
 
@@ -1703,6 +1768,10 @@ class SACCOSummaryView(APIView):
                 "total_venture_balance": float(sum(running["venture_net"].values())),
                 "total_loan_outstanding": float(sum(running["loan_out"].values())),
                 "total_fee_income": float(sum(yearly["fee_income"].values())),
+                "total_fee_liability": float(sum(yearly["fee_liability"].values())),
+                "total_fee_equity": float(sum(yearly["fee_equity"].values())),
+                "total_fee_asset": float(sum(yearly["fee_asset"].values())),
+                "total_fee_expense": float(sum(yearly["fee_expense"].values())),
                 "total_member_contributions": float(sum(yearly["member_contributions"].values())),
                 "total_fees_outstanding": float(MemberFee.objects.aggregate(total=Sum("remaining_balance"))["total"] or 0),
                 "total_guaranteed_active": float(total_active_guarantees),
@@ -1715,6 +1784,10 @@ class SACCOSummaryView(APIView):
                 "loan_repayments": {k: float(v) for k, v in yearly["loan_rep"].items()},
                 "loan_interest": {k: float(v) for k, v in yearly["loan_int"].items()},
                 "fee_income": {k: float(v) for k, v in yearly["fee_income"].items()},
+                "fee_liability": {k: float(v) for k, v in yearly["fee_liability"].items()},
+                "fee_equity": {k: float(v) for k, v in yearly["fee_equity"].items()},
+                "fee_asset": {k: float(v) for k, v in yearly["fee_asset"].items()},
+                "fee_expense": {k: float(v) for k, v in yearly["fee_expense"].items()},
                 "member_contributions": {k: float(v) for k, v in yearly["member_contributions"].items()},
                 "guarantees": {k: float(v) for k, v in yearly["guarantees"].items()},
             },
