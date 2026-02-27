@@ -69,7 +69,10 @@ def create_member_accounts(user):
             member=user, fee_type=fee_type
         ).exists():
             account = MemberFee.objects.create(
-                member=user, fee_type=fee_type, amount=fee_type.standard_amount
+                member=user, 
+                fee_type=fee_type, 
+                amount=fee_type.standard_amount,
+                remaining_balance=fee_type.standard_amount
             )
             created_fees.append(str(account))
     logger.info(
