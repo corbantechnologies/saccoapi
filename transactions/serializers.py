@@ -101,17 +101,15 @@ class AccountSerializer(serializers.ModelSerializer):
         )
 
     def get_fees(self, obj):
-        fees_list = []
-        for fee in obj.fees.all():
-            total_paid = sum(p.amount for p in fee.payments.all())
-            remaining = float(max(fee.amount - total_paid, 0))
-            fees_list.append({
+        return [
+            {
                 "account_number": fee.account_number,
                 "fee_type_name": fee.fee_type.name,
                 "amount": float(fee.amount),
-                "remaining_balance": remaining,
-            })
-        return fees_list
+                "remaining_balance": float(fee.remaining_balance),
+            }
+            for fee in obj.fees.all()
+        ]
 
     def get_member_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip()
