@@ -1817,7 +1817,10 @@ class CashbookView(APIView):
     """
     def get(self, request):
         # We focus on the Cash at Bank account (Code 1010)
-        cash_acc = GLAccount.objects.get(code='1010')
+        cash_acc = GLAccount.objects.filter(code='1010').first()
+        if not cash_acc:
+            return Response([], status=status.HTTP_200_OK)
+            
         entries = JournalEntry.objects.filter(gl_account=cash_acc).order_by('transaction_date', 'created_at')
         
         results = []
